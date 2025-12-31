@@ -1,0 +1,15 @@
+# Cloudflare Worker 配置
+# 处理 gambanpo.net/shinchan-3d-game/* 路径
+
+name = "shinchan-3d-game"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# 路由配置 - 只匹配 /shinchan-3d-game/* 路径
+# 其他路径会走 Cloudflare 默认代理到你的 upstream
+routes = [
+  { pattern = "gambanpo.net/shinchan-3d-game/*", zone_name = "gambanpo.net" }
+]
+
+# 部署命令：
+# npx wrangler deploy

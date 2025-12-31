@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>蜡笔小新 3D 冒险 - Crayon Shin-chan 3D Adventure</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 加载界面 -->
+    <div id="loading-screen" class="screen">
+        <div class="loading-content">
+            <div class="loading-character">🖍️</div>
+            <h2>加载中...</h2>
+            <div class="loading-bar">
+                <div class="loading-progress" id="loading-progress"></div>
+            </div>
+            <p id="loading-text">准备素材...</p>
+        </div>
+    </div>
+
+    <!-- 游戏开始界面 -->
+    <div id="start-screen" class="screen hidden">
+        <div class="start-bg"></div>
+        <div class="start-content">
+            <div class="title-container">
+                <h1 class="game-title">
+                    <span class="title-char" style="--delay: 0">蜡</span>
+                    <span class="title-char" style="--delay: 1">笔</span>
+                    <span class="title-char" style="--delay: 2">小</span>
+                    <span class="title-char" style="--delay: 3">新</span>
+                </h1>
+                <h2 class="game-subtitle">🍪 饼干大作战 🍪</h2>
+            </div>
+
+            <div class="character-showcase">
+                <div class="showcase-item">
+                    <div class="char-icon shinnosuke-icon"></div>
+                    <span>小新</span>
+                </div>
+                <div class="showcase-item">
+                    <div class="char-icon shiro-icon"></div>
+                    <span>小白</span>
+                </div>
+            </div>
+
+            <div class="menu-buttons">
+                <button id="start-btn" class="game-btn primary-btn">
+                    <span class="btn-icon">🎮</span>
+                    开始游戏
+                </button>
+                <button id="how-to-play-btn" class="game-btn secondary-btn">
+                    <span class="btn-icon">📖</span>
+                    游戏说明
+                </button>
+            </div>
+
+            <div class="difficulty-selector">
+                <span>难度选择:</span>
+                <div class="difficulty-options">
+                    <button class="diff-btn active" data-difficulty="easy">简单</button>
+                    <button class="diff-btn" data-difficulty="normal">普通</button>
+                    <button class="diff-btn" data-difficulty="hard">困难</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="floating-cookies">
+            <div class="float-cookie" style="--x: 10%; --delay: 0s;">🍪</div>
+            <div class="float-cookie" style="--x: 25%; --delay: 0.5s;">⭐</div>
+            <div class="float-cookie" style="--x: 40%; --delay: 1s;">🍪</div>
+            <div class="float-cookie" style="--x: 60%; --delay: 1.5s;">🍫</div>
+            <div class="float-cookie" style="--x: 75%; --delay: 2s;">🍪</div>
+            <div class="float-cookie" style="--x: 90%; --delay: 2.5s;">⭐</div>
+        </div>
+    </div>
+
+    <!-- 游戏说明界面 -->
+    <div id="how-to-play-screen" class="screen hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content instructions-modal">
+            <h2>🎮 游戏说明</h2>
+            <div class="instructions-grid">
+                <div class="instruction-item">
+                    <div class="instruction-icon">⌨️</div>
+                    <div class="instruction-text">
+                        <h3>移动控制</h3>
+                        <p>WASD 或 方向键移动小新</p>
+                        <p>手机玩家使用虚拟摇杆</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🍪</div>
+                    <div class="instruction-text">
+                        <h3>收集饼干</h3>
+                        <p>收集场景中的饼干得分</p>
+                        <p>不同饼干分值不同!</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">⭐</div>
+                    <div class="instruction-text">
+                        <h3>收集道具</h3>
+                        <p>⭐ 无敌星星 - 短暂无敌</p>
+                        <p>💨 加速鞋 - 移动加速</p>
+                        <p>❤️ 爱心 - 恢复生命</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">👩</div>
+                    <div class="instruction-text">
+                        <h3>躲避妈妈</h3>
+                        <p>美冴妈妈会追着你跑</p>
+                        <p>被抓到会失去一条命!</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🐕</div>
+                    <div class="instruction-text">
+                        <h3>小白助攻</h3>
+                        <p>小白会帮你分散妈妈注意力</p>
+                        <p>善用小白的帮助!</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🏆</div>
+                    <div class="instruction-text">
+                        <h3>目标</h3>
+                        <p>在时间内收集尽可能多的饼干</p>
+                        <p>挑战高分记录!</p>
+                    </div>
+                </div>
+            </div>
+            <button id="close-instructions-btn" class="game-btn primary-btn">知道了!</button>
+        </div>
+    </div>
+
+    <!-- 游戏主UI -->
+    <div id="game-ui" class="hidden">
+        <div class="top-bar">
+            <div class="ui-panel score-panel">
+                <img src="assets/cookie-icon.jpg" alt="cookie" class="panel-icon">
+                <span id="score">0</span>
+            </div>
+            <div class="ui-panel time-panel">
+                <span class="time-icon">⏱️</span>
+                <span id="time">60</span>
+            </div>
+            <div class="ui-panel lives-panel">
+                <span id="lives"></span>
+            </div>
+            <button id="pause-btn" class="icon-btn">⏸️</button>
+        </div>
+
+        <div class="combo-display hidden" id="combo-display">
+            <span class="combo-text">COMBO</span>
+            <span class="combo-count" id="combo-count">x2</span>
+        </div>
+
+        <div class="powerup-indicator" id="powerup-indicator"></div>
+
+        <div class="bottom-info">
+            <div class="highscore-display">
+                🏆 最高分: <span id="highscore">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 暂停界面 -->
+    <div id="pause-screen" class="screen hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content pause-modal">
+            <h2>⏸️ 游戏暂停</h2>
+            <div class="pause-stats">
+                <p>当前得分: <span id="pause-score">0</span> 🍪</p>
+                <p>剩余时间: <span id="pause-time">60</span> 秒</p>
+            </div>
+            <div class="pause-buttons">
+                <button id="resume-btn" class="game-btn primary-btn">继续游戏</button>
+                <button id="restart-from-pause-btn" class="game-btn secondary-btn">重新开始</button>
+                <button id="quit-btn" class="game-btn danger-btn">退出游戏</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 被抓住提示 -->
+    <div id="caught-message" class="hidden">
+        <div class="caught-content">
+            <span class="caught-icon">💢</span>
+            <p>被妈妈抓住了!</p>
+        </div>
+    </div>
+
+    <!-- 收集提示 -->
+    <div id="collect-popup" class="collect-popup hidden">
+        <span class="collect-text">+10</span>
+    </div>
+
+    <!-- 游戏结束界面 -->
+    <div id="game-over-screen" class="screen hidden">
+        <div class="game-over-content">
+            <h1 class="game-over-title">游戏结束!</h1>
+
+            <div class="result-card">
+                <div class="result-header">
+                    <span class="result-grade" id="result-grade">A</span>
+                </div>
+                <div class="result-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">收集饼干</span>
+                        <span class="stat-value" id="final-score">0</span>
+                        <span class="stat-icon">🍪</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">最高连击</span>
+                        <span class="stat-value" id="max-combo">0</span>
+                        <span class="stat-icon">🔥</span>
+                    </div>
+                    <div class="stat-item highlight" id="new-record" style="display: none;">
+                        <span class="stat-label">🎉 新纪录!</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="game-over-buttons">
+                <button id="restart-btn" class="game-btn primary-btn">
+                    <span class="btn-icon">🔄</span>
+                    再玩一次
+                </button>
+                <button id="back-to-menu-btn" class="game-btn secondary-btn">
+                    <span class="btn-icon">🏠</span>
+                    返回菜单
+                </button>
+            </div>
+
+            <div class="share-section">
+                <p>分享你的成绩!</p>
+                <div class="share-buttons">
+                    <button class="share-btn" id="copy-score-btn">📋 复制成绩</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 移动端虚拟摇杆 -->
+    <div id="mobile-controls" class="hidden">
+        <div id="joystick-container">
+            <div id="joystick-base">
+                <div id="joystick-stick"></div>
+            </div>
+        </div>
+        <button id="mobile-pause-btn" class="mobile-btn">⏸️</button>
+    </div>
+
+    <!-- Three.js 游戏容器 -->
+    <div id="game-container"></div>
+
+    <!-- 音效管理 -->
+    <button id="sound-toggle" class="sound-btn">🔊</button>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 游戏脚本 -->
+    <script src="game.js"></script>
+</body>
+</html>

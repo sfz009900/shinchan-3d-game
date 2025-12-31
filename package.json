@@ -1,0 +1,22 @@
+{
+  "name": "shinchan-3d-game",
+  "version": "1.0.0",
+  "description": "蜡笔小新 3D 饼干大作战 - Crayon Shin-chan Cookie Adventure",
+  "private": true,
+  "scripts": {
+    "dev": "npx wrangler pages dev public --port 8787",
+    "deploy:pages": "npx wrangler pages deploy public --project-name=shinchan-3d-game",
+    "deploy:worker": "npx wrangler deploy",
+    "deploy": "pnpm deploy:pages && pnpm deploy:worker"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "keywords": [
+    "game",
+    "3d",
+    "threejs",
+    "crayon-shinchan"
+  ],
+  "license": "MIT"
+}
