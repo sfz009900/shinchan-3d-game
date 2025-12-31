@@ -21,9 +21,20 @@ function startGame() {
     GameState.forcedMoveUntil = 0;
     GameState.controlLockedUntil = 0;
     GameState.hiddenUntil = 0;
+    GameState.playerStunnedUntil = 0;
     GameState.enemyStunnedUntil = 0;
     GameState.enemyDistractedUntil = 0;
     GameState.enemySearchUntil = 0;
+    GameState.enemyPhaseUntil = 0;
+    GameState.enemyPhaseCooldownUntil = 0;
+    GameState.enemyStuckSince = 0;
+    GameState.enemyWasPhasing = false;
+    GameState.shiroTripCooldownUntil = 0;
+    setEnemyPhaseVisual(false);
+    if (GameState.cameraShakeOffset && GameState.camera) {
+        GameState.camera.position.sub(GameState.cameraShakeOffset);
+        GameState.cameraShakeOffset.set(0, 0, 0);
+    }
     clearEnemyDistraction();
 
     // 清空陷阱
@@ -119,6 +130,16 @@ function quitToMenu() {
     DOM.gameUI.classList.remove('danger');
     setActionPrompt(false);
     GameState.dangerBeepAt = 0;
+    GameState.playerStunnedUntil = 0;
+    GameState.enemyPhaseUntil = 0;
+    GameState.enemyPhaseCooldownUntil = 0;
+    GameState.enemyStuckSince = 0;
+    if (GameState.enemyWasPhasing) setEnemyPhaseVisual(false);
+    GameState.enemyWasPhasing = false;
+    if (GameState.cameraShakeOffset && GameState.camera) {
+        GameState.camera.position.sub(GameState.cameraShakeOffset);
+        GameState.cameraShakeOffset.set(0, 0, 0);
+    }
 
     DOM.pauseScreen.classList.add('hidden');
     DOM.gameUI.classList.add('hidden');
@@ -135,6 +156,16 @@ function gameOver() {
     setActionPrompt(false);
     GameState.dangerBeepAt = 0;
     clearEnemyDistraction();
+    GameState.playerStunnedUntil = 0;
+    GameState.enemyPhaseUntil = 0;
+    GameState.enemyPhaseCooldownUntil = 0;
+    GameState.enemyStuckSince = 0;
+    if (GameState.enemyWasPhasing) setEnemyPhaseVisual(false);
+    GameState.enemyWasPhasing = false;
+    if (GameState.cameraShakeOffset && GameState.camera) {
+        GameState.camera.position.sub(GameState.cameraShakeOffset);
+        GameState.cameraShakeOffset.set(0, 0, 0);
+    }
 
     // 检查新纪录
     const isNewRecord = GameState.score > GameState.highScore;

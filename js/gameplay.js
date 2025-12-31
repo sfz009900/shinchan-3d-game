@@ -70,10 +70,72 @@ function updatePlayer() {
         GameState.player.rotation.y = Math.atan2(dirX, dirZ);
     }
 
+    // 小白绊倒：跑动时踩到会眩晕（跳起来可越过）
+    if (!locked && moving && GameState.shiro && now >= GameState.shiroTripCooldownUntil) {
+        const airborne = !GameState.playerOnGround || GameState.playerBaseY > CONFIG.SHIRO_TRIP.AVOID_JUMP_HEIGHT;
+        const protectedMove = dashing || forced;
+        if (!airborne && !protectedMove) {
+            const px = GameState.player.position.x;
+            const pz = GameState.player.position.z;
+            const sx = GameState.shiro.position.x;
+            const sz = GameState.shiro.position.z;
+            const dx = sx - px;
+            const dz = sz - pz;
+            const trigger = CONFIG.SHIRO_TRIP.TRIGGER_DISTANCE;
+            const dist2 = dx * dx + dz * dz;
+            if (dist2 < trigger * trigger) {
+                const dist = Math.sqrt(dist2);
+                const md = Math.hypot(dirX, dirZ);
+                // 只在“正面撞上”时触发，减少烦躁感
+                let dot = 1;
+                if (dist > 1e-6 && md > 1e-6) {
+                    dot = (dx * (dirX / md) + dz * (dirZ / md)) / dist;
+                }
+                if (dot > 0.15) {
+                    GameState.shiroTripCooldownUntil = now + CONFIG.SHIRO_TRIP.COOLDOWN_MS;
+                    GameState.playerStunnedUntil = now + CONFIG.SHIRO_TRIP.STUN_MS;
+                    GameState.controlLockedUntil = Math.max(GameState.controlLockedUntil, GameState.playerStunnedUntil);
+                    GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + CONFIG.SHIRO_TRIP.NO_CATCH_GRACE_MS);
+                    GameState.jumpBufferedUntil = 0;
+                    GameState.dashUntil = 0;
+                    GameState.forcedMoveUntil = 0;
+                    GameState.playerVelY = 0;
+                    GameState.playerBaseY = 0;
+                    GameState.playerOnGround = true;
+
+                    const backX = -dirX;
+                    const backZ = -dirZ;
+                    const backLen = Math.hypot(backX, backZ);
+                    if (backLen > 1e-6) {
+                        moveWithCollisions(
+                            GameState.player,
+                            (backX / backLen) * 0.85,
+                            (backZ / backLen) * 0.85,
+                            CONFIG.PLAYER_RADIUS,
+                            0
+                        );
+                    }
+
+                    particleSystem.emit(new THREE.Vector3(GameState.player.position.x, 0.2, GameState.player.position.z), 0xFFFFFF, 8);
+                    AudioManager.playTone(160, 0.06, 'square');
+                    showCollectPopup('🐾 被小白绊倒!');
+                    moving = false;
+                }
+            }
+        }
+    }
+
     // 走路起伏（仅落地时）
     const time = GameState.clock.getElapsedTime();
     const walkBob = (GameState.playerOnGround && moving && !dashing && !forced) ? Math.abs(Math.sin(time * 12)) * 0.12 : 0;
     GameState.player.position.y = GameState.playerBaseY + walkBob;
+
+    // 眩晕动画
+    if (now < GameState.playerStunnedUntil) {
+        GameState.player.rotation.z = Math.sin(time * 18) * 0.22;
+    } else {
+        GameState.player.rotation.z = 0;
+    }
 
     // 冲刺尾迹
     if ((dashing || forced) && Math.random() < 0.45) {
@@ -94,13 +156,88 @@ function updatePlayer() {
     }
 
     // 相机跟随
+    // 先移除上一帧抖动偏移，避免累积漂移
+    if (GameState.cameraShakeOffset) {
+        GameState.camera.position.sub(GameState.cameraShakeOffset);
+        GameState.cameraShakeOffset.set(0, 0, 0);
+    }
     const targetCamX = GameState.player.position.x * 0.7;
     const targetCamZ = GameState.player.position.z + 18;
     GameState.camera.position.x += (targetCamX - GameState.camera.position.x) * 0.05;
     GameState.camera.position.z += (targetCamZ - GameState.camera.position.z) * 0.05;
+
+    // 妈妈贴脸时镜头轻微抖动，增加压迫感（躲藏时关闭）
+    if (GameState.enemy && now >= GameState.hiddenUntil) {
+        const dist = Math.hypot(
+            GameState.enemy.position.x - GameState.player.position.x,
+            GameState.enemy.position.z - GameState.player.position.z
+        );
+        const maxDist = 4.2;
+        if (dist < maxDist) {
+            const intensity = (maxDist - dist) / maxDist;
+            const t = GameState.clock.getElapsedTime();
+            GameState.cameraShakeOffset.set(
+                Math.sin(t * 22.3) * 0.18 * intensity,
+                Math.sin(t * 28.1) * 0.08 * intensity,
+                Math.cos(t * 18.7) * 0.14 * intensity
+            );
+            GameState.camera.position.add(GameState.cameraShakeOffset);
+        }
+    }
     GameState.camera.lookAt(GameState.player.position.x, 0, GameState.player.position.z);
 
     updateActionPrompt();
+}
+
+function setEnemyPhaseVisual(active) {
+    if (!GameState.enemy) return;
+    const tint = new THREE.Color(0xFF4D4D);
+    GameState.enemy.traverse((obj) => {
+        if (!obj.isMesh || !obj.material) return;
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const m of materials) {
+            if (!m) continue;
+            m.userData = m.userData || {};
+            if (active) {
+                if (m.userData._phaseOrig) continue;
+                m.userData._phaseOrig = {
+                    transparent: !!m.transparent,
+                    opacity: Number.isFinite(m.opacity) ? m.opacity : 1,
+                    color: m.color ? m.color.getHex() : null,
+                    emissive: m.emissive ? m.emissive.getHex() : null
+                };
+                m.transparent = true;
+                m.opacity = Math.min(m.userData._phaseOrig.opacity, 0.42);
+                if (m.color) m.color.lerp(tint, 0.35);
+                if (m.emissive) m.emissive.setHex(0x220000);
+            } else {
+                const orig = m.userData._phaseOrig;
+                if (!orig) continue;
+                m.transparent = orig.transparent;
+                m.opacity = orig.opacity;
+                if (m.color && orig.color != null) m.color.setHex(orig.color);
+                if (m.emissive && orig.emissive != null) m.emissive.setHex(orig.emissive);
+                delete m.userData._phaseOrig;
+            }
+        }
+    });
+}
+
+function startEnemyPhase(reason = 'hunt') {
+    const now = Date.now();
+    GameState.enemyPhaseUntil = now + CONFIG.ENEMY_PHASE.DURATION;
+    GameState.enemyPhaseCooldownUntil = now + CONFIG.ENEMY_PHASE.COOLDOWN;
+    GameState.enemyStuckSince = 0;
+    // 立即切换视觉，避免一帧延迟
+    setEnemyPhaseVisual(true);
+    GameState.enemyWasPhasing = true;
+    if (reason === 'hunt') {
+        showCollectPopup('👻 妈妈穿墙追来!');
+        AudioManager.playTone(92, 0.08, 'sawtooth');
+    } else {
+        AudioManager.playTone(82, 0.06, 'sawtooth');
+    }
+    if (GameState.enemy) particleSystem.emit(GameState.enemy.position, 0xFF4D4D, 10);
 }
 
 // ============ 敌人AI ============
@@ -109,6 +246,23 @@ function updateEnemy() {
 
     const now = Date.now();
     const config = CONFIG.DIFFICULTY[GameState.difficulty];
+    let phaseActive = now < GameState.enemyPhaseUntil;
+
+    // 处理“穿墙/幽灵追击”视觉切换
+    if (phaseActive !== GameState.enemyWasPhasing) {
+        setEnemyPhaseVisual(phaseActive);
+        // 穿墙结束时，拉回可走区域，避免卡在建筑体内
+        if (!phaseActive && GameState.enemy) {
+            const resolved = resolveCollisionsXZ(
+                GameState.enemy.position,
+                CONFIG.ENEMY_RADIUS,
+                Math.max(0, GameState.enemy.position.y)
+            );
+            GameState.enemy.position.x = resolved.x;
+            GameState.enemy.position.z = resolved.z;
+        }
+        GameState.enemyWasPhasing = phaseActive;
+    }
 
     // 清理过期诱饵
     if (now >= GameState.enemyDistractedUntil && GameState.enemyDistractionMesh) {
@@ -130,6 +284,11 @@ function updateEnemy() {
             GameState.scene.remove(trap.mesh);
             GameState.traps.splice(i, 1);
             GameState.enemyStunnedUntil = now + 1200;
+            // 被香蕉皮打断穿墙
+            GameState.enemyPhaseUntil = 0;
+            GameState.enemyStuckSince = 0;
+            setEnemyPhaseVisual(false);
+            GameState.enemyWasPhasing = false;
             particleSystem.emit(GameState.enemy.position, 0xFFD93D, 12);
             AudioManager.playTone(110, 0.12, 'square');
             showCollectPopup('💥 妈妈滑倒!');
@@ -222,6 +381,19 @@ function updateEnemy() {
     const distToPlayerXZ = Math.hypot(enemyPos.x - playerPos.x, enemyPos.z - playerPos.z);
     updateDangerEffects(distToPlayerXZ);
 
+    // 没视野时：有概率“穿墙追击”；以及卡住太久会强制穿墙，避免妈妈像傻瓜一样绕半天
+    if (!phaseActive && !playerHidden && now >= GameState.enemyPhaseCooldownUntil) {
+        const delta = GameState.delta || 1 / CONFIG.PHYSICS.FIXED_FPS;
+        const diffMul = GameState.difficulty === 'easy' ? 0.7 : (GameState.difficulty === 'hard' ? 1.25 : 1);
+        const chance = CONFIG.ENEMY_PHASE.CHANCE_PER_SECOND * diffMul * delta;
+        const stuckTooLong = GameState.enemyStuckSince > 0 && (now - GameState.enemyStuckSince) >= CONFIG.ENEMY_PHASE.STUCK_TRIGGER_MS;
+        const huntPhase = !canSeePlayer && distToPlayerXZ < CONFIG.ENEMY_PHASE.TRIGGER_DISTANCE && Math.random() < chance;
+        if ((stuckTooLong && distToPlayerXZ < 18) || huntPhase) {
+            startEnemyPhase(stuckTooLong ? 'stuck' : 'hunt');
+            phaseActive = true;
+        }
+    }
+
     if (distance > 0.12) {
         const scale = GameState.frameScale ?? 1;
         const zoneFactor = getZoneSpeedFactor(enemyPos.x, enemyPos.z, 'enemy');
@@ -232,19 +404,38 @@ function updateEnemy() {
         if (searching) rage *= 0.9;
         if (now < GameState.enemyDistractedUntil) rage *= 0.92;
 
-        const step = config.enemySpeed * scale * zoneFactor * rage;
+        const step = config.enemySpeed * scale * zoneFactor * rage * (phaseActive ? CONFIG.ENEMY_PHASE.SPEED_MULTIPLIER : 1);
         const moveX = (toX / distance) * step;
         const moveZ = (toZ / distance) * step;
 
         const before = enemyPos.clone();
-        moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
-        const moved = enemyPos.distanceTo(before);
+        if (phaseActive) {
+            // 穿墙：不做碰撞解析，直线压迫
+            enemyPos.x += moveX;
+            enemyPos.z += moveZ;
+            clampToWorldXZ(enemyPos);
+        } else {
+            moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
+            const moved = enemyPos.distanceTo(before);
 
-        // 简单“绕障”防卡死：如果完全没动，尝试横向挪一下
-        if (moved < 0.001) {
-            const sideX = -(toZ / distance) * (step * 0.9);
-            const sideZ = (toX / distance) * (step * 0.9);
-            moveWithCollisions(GameState.enemy, sideX, sideZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
+            // 简单“绕障”防卡死：如果完全没动，尝试横向挪一下
+            if (moved < 0.001) {
+                const sideX = -(toZ / distance) * (step * 0.9);
+                const sideZ = (toX / distance) * (step * 0.9);
+                moveWithCollisions(GameState.enemy, sideX, sideZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
+            }
+        }
+
+        // 卡住检测（用于触发穿墙）
+        if (!phaseActive) {
+            const movedTotal = enemyPos.distanceTo(before);
+            if (movedTotal < 0.001 && distance > 1.8) {
+                if (!GameState.enemyStuckSince) GameState.enemyStuckSince = now;
+            } else {
+                GameState.enemyStuckSince = 0;
+            }
+        } else {
+            GameState.enemyStuckSince = 0;
         }
 
         GameState.enemy.rotation.y = Math.atan2(toX, toZ);
@@ -299,6 +490,7 @@ function updateShiro() {
 
 // ============ 玩家被抓 ============
 function playerCaught() {
+    const now = Date.now();
     GameState.lives--;
     GameState.combo = 0;
     updateLivesDisplay();
@@ -324,10 +516,16 @@ function playerCaught() {
     GameState.forcedMoveUntil = 0;
     GameState.controlLockedUntil = 0;
     GameState.hiddenUntil = 0;
+    GameState.playerStunnedUntil = 0;
     GameState.enemy.position.set(-12, 0, -15);
     GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
+    GameState.enemyPhaseUntil = 0;
+    GameState.enemyStuckSince = 0;
+    GameState.enemyPhaseCooldownUntil = now + 1200;
+    if (GameState.enemyWasPhasing) setEnemyPhaseVisual(false);
+    GameState.enemyWasPhasing = false;
     // 短暂无敌保护，避免连环被抓
-    GameState.noCatchUntil = Date.now() + 1100;
+    GameState.noCatchUntil = now + 1100;
 
     if (GameState.lives <= 0) {
         gameOver();
@@ -380,15 +578,27 @@ function collectCookie(cookie, index) {
 
     // 计算分数 (连击加成)
     const comboMultiplier = 1 + (GameState.combo - 1) * 0.1;
-    const finalPoints = Math.floor(points * comboMultiplier);
+    let finalPoints = Math.floor(points * comboMultiplier);
+    let panicBonus = false;
+    if (GameState.enemy && now >= GameState.hiddenUntil) {
+        const distToEnemy = Math.hypot(
+            GameState.enemy.position.x - GameState.player.position.x,
+            GameState.enemy.position.z - GameState.player.position.z
+        );
+        if (distToEnemy < CONFIG.PANIC_BONUS.DISTANCE) {
+            finalPoints = Math.floor(finalPoints * CONFIG.PANIC_BONUS.MULTIPLIER);
+            panicBonus = true;
+        }
+    }
     GameState.score += finalPoints;
 
     // 显示收集动画
-    showCollectPopup('+' + finalPoints);
+    showCollectPopup((panicBonus ? '🔥 ' : '') + '+' + finalPoints);
     updateScoreDisplay();
     updateComboDisplay();
 
     AudioManager.playCollect();
+    if (panicBonus) AudioManager.playTone(1320, 0.05, 'triangle');
 
     // 粒子效果
     const color = cookie.userData.type === 'star' ? 0xFFD700 :

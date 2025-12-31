@@ -32,6 +32,25 @@ const CONFIG = {
         COOLDOWN: 1400,       // ms
         SPEED_MULTIPLIER: 2.4
     },
+    ENEMY_PHASE: {
+        DURATION: 1100,              // ms：妈妈穿墙持续时间
+        COOLDOWN: 5200,              // ms：穿墙冷却
+        SPEED_MULTIPLIER: 1.18,      // 穿墙时略加速，更有压迫感
+        STUCK_TRIGGER_MS: 420,       // 卡住多久后强制穿墙
+        TRIGGER_DISTANCE: 12,        // 距离玩家多近才会主动穿墙
+        CHANCE_PER_SECOND: 0.22      // 没视野时的“突然穿墙”概率（每秒）
+    },
+    SHIRO_TRIP: {
+        STUN_MS: 500,                // ms：被小白绊倒眩晕
+        COOLDOWN: 1400,              // ms：避免连续触发
+        TRIGGER_DISTANCE: 1.18,      // 距离阈值
+        AVOID_JUMP_HEIGHT: 0.25,     // 跳跃高度超过该值可跳过
+        NO_CATCH_GRACE_MS: 650       // 绊倒后短暂保护，避免“无解连抓”
+    },
+    PANIC_BONUS: {
+        DISTANCE: 5.2,               // 妈妈接近时的“紧张加成”
+        MULTIPLIER: 1.15
+    },
     INTERACT: {
         RANGE: 3.2
     }
@@ -76,6 +95,7 @@ const GameState = {
     forcedMoveMultiplier: 2.8,
     controlLockedUntil: 0,
     hiddenUntil: 0,
+    playerStunnedUntil: 0,
     colliders: [],
     zones: [],
     interactables: [],
@@ -87,7 +107,13 @@ const GameState = {
     enemyLastKnownPlayerPos: new THREE.Vector3(),
     enemySearchUntil: 0,
     enemySearchTarget: new THREE.Vector3(),
+    enemyPhaseUntil: 0,
+    enemyPhaseCooldownUntil: 0,
+    enemyStuckSince: 0,
+    enemyWasPhasing: false,
+    shiroTripCooldownUntil: 0,
     dangerBeepAt: 0,
+    cameraShakeOffset: new THREE.Vector3(),
     delta: 0,
     frameScale: 1,
     joystickInput: { x: 0, y: 0 },
@@ -204,4 +230,3 @@ const AudioManager = {
         this.playTone(Math.min(freq, 1200), 0.15);
     }
 };
-
