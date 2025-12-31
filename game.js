@@ -150,12 +150,58 @@ function initDOM() {
 const AudioManager = {
     context: null,
     sounds: {},
+    bgm: null,
+    bgmLoopTimer: null,
 
     init() {
         try {
             this.context = new (window.AudioContext || window.webkitAudioContext)();
+            // 初始化背景音乐
+            this.bgm = new Audio('assets/bgm.mp3');
+            this.bgm.volume = 0.3;
+            // 监听播放结束，间隔2秒后重新播放
+            this.bgm.addEventListener('ended', () => {
+                if (GameState.isPlaying && !GameState.isPaused && GameState.soundEnabled) {
+                    this.bgmLoopTimer = setTimeout(() => {
+                        this.bgm.currentTime = 0;
+                        this.bgm.play().catch(e => console.log('BGM replay blocked:', e));
+                    }, 2000);
+                }
+            });
         } catch (e) {
             console.log('Web Audio API not supported');
+        }
+    },
+
+    playBGM() {
+        if (this.bgm && GameState.soundEnabled) {
+            if (this.bgmLoopTimer) {
+                clearTimeout(this.bgmLoopTimer);
+                this.bgmLoopTimer = null;
+            }
+            this.bgm.currentTime = 0;
+            this.bgm.play().catch(e => console.log('BGM autoplay blocked:', e));
+        }
+    },
+
+    pauseBGM() {
+        if (this.bgm) {
+            if (this.bgmLoopTimer) {
+                clearTimeout(this.bgmLoopTimer);
+                this.bgmLoopTimer = null;
+            }
+            this.bgm.pause();
+        }
+    },
+
+    stopBGM() {
+        if (this.bgm) {
+            if (this.bgmLoopTimer) {
+                clearTimeout(this.bgmLoopTimer);
+                this.bgmLoopTimer = null;
+            }
+            this.bgm.pause();
+            this.bgm.currentTime = 0;
         }
     },
 
@@ -2603,6 +2649,9 @@ function startGame() {
     if (AudioManager.context && AudioManager.context.state === 'suspended') {
         AudioManager.context.resume();
     }
+
+    // 开始播放背景音乐
+    AudioManager.playBGM();
 }
 
 function startGameTimer() {
@@ -2626,6 +2675,7 @@ function togglePause() {
     GameState.isPaused = !GameState.isPaused;
 
     if (GameState.isPaused) {
+        AudioManager.pauseBGM();
         DOM.gameUI.classList.remove('danger');
         setActionPrompt(false);
         GameState.dangerBeepAt = 0;
@@ -2633,12 +2683,14 @@ function togglePause() {
         DOM.pauseScore.textContent = GameState.score;
         DOM.pauseTime.textContent = Math.ceil(GameState.timeLeft);
     } else {
+        AudioManager.playBGM();
         DOM.pauseScreen.classList.add('hidden');
     }
 }
 
 function resumeGame() {
     GameState.isPaused = false;
+    AudioManager.playBGM();
     DOM.pauseScreen.classList.add('hidden');
 }
 
@@ -2647,6 +2699,7 @@ function quitToMenu() {
     GameState.isPaused = false;
     clearInterval(GameState.timerInterval);
 
+    AudioManager.stopBGM();
     DOM.gameUI.classList.remove('danger');
     setActionPrompt(false);
     GameState.dangerBeepAt = 0;
@@ -2661,6 +2714,7 @@ function gameOver() {
     GameState.isPlaying = false;
     clearInterval(GameState.timerInterval);
 
+    AudioManager.stopBGM();
     AudioManager.playGameOver();
     DOM.gameUI.classList.remove('danger');
     setActionPrompt(false);
@@ -2791,6 +2845,14 @@ function bindEvents() {
         GameState.soundEnabled = !GameState.soundEnabled;
         DOM.soundToggle.textContent = GameState.soundEnabled ? '🔊' : '🔇';
         DOM.soundToggle.classList.toggle('muted', !GameState.soundEnabled);
+        // 同步BGM状态
+        if (GameState.isPlaying && !GameState.isPaused) {
+            if (GameState.soundEnabled) {
+                AudioManager.playBGM();
+            } else {
+                AudioManager.pauseBGM();
+            }
+        }
     });
 
     // 难度选择
