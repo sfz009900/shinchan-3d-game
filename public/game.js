@@ -12,11 +12,29 @@ const CONFIG = {
         hard: { enemySpeed: 0.12, gameTime: 45, cookieCount: 10 }
     },
     PLAYER_SPEED: 0.18,
+    PLAYER_RADIUS: 0.75,
+    ENEMY_RADIUS: 0.85,
+    SHIRO_RADIUS: 0.55,
     INITIAL_LIVES: 3,
     WORLD_SIZE: 28,
     CATCH_DISTANCE: 1.5,
     POWERUP_DURATION: 5000,
-    COMBO_TIMEOUT: 2000
+    COMBO_TIMEOUT: 2000,
+    PHYSICS: {
+        FIXED_FPS: 60,
+        MAX_FRAME_SCALE: 2.5,
+        GRAVITY: 22,          // 单位/秒^2
+        JUMP_VELOCITY: 8.2,   // 单位/秒
+        MAX_JUMP_HEIGHT_FOR_DODGE: 0.6
+    },
+    DASH: {
+        DURATION: 260,        // ms
+        COOLDOWN: 1400,       // ms
+        SPEED_MULTIPLIER: 2.4
+    },
+    INTERACT: {
+        RANGE: 3.2
+    }
 };
 
 // ============ 游戏状态 ============
@@ -45,6 +63,33 @@ const GameState = {
     soundEnabled: true,
     isInvincible: false,
     speedBoost: false,
+    noCatchUntil: 0,
+    playerVelY: 0,
+    playerOnGround: true,
+    playerBaseY: 0,
+    jumpBufferedUntil: 0,
+    dashUntil: 0,
+    dashCooldownUntil: 0,
+    dashDir: new THREE.Vector3(0, 0, 1),
+    forcedMoveUntil: 0,
+    forcedMoveDir: new THREE.Vector3(0, 0, 1),
+    forcedMoveMultiplier: 2.8,
+    controlLockedUntil: 0,
+    hiddenUntil: 0,
+    colliders: [],
+    zones: [],
+    interactables: [],
+    traps: [],
+    enemyStunnedUntil: 0,
+    enemyDistractedUntil: 0,
+    enemyDistractionPos: new THREE.Vector3(),
+    enemyDistractionMesh: null,
+    enemyLastKnownPlayerPos: new THREE.Vector3(),
+    enemySearchUntil: 0,
+    enemySearchTarget: new THREE.Vector3(),
+    dangerBeepAt: 0,
+    delta: 0,
+    frameScale: 1,
     joystickInput: { x: 0, y: 0 },
     isMobile: false
 };
@@ -87,10 +132,16 @@ function initDOM() {
     DOM.comboDisplay = document.getElementById('combo-display');
     DOM.comboCount = document.getElementById('combo-count');
     DOM.powerupIndicator = document.getElementById('powerup-indicator');
+    DOM.actionPrompt = document.getElementById('action-prompt');
+    DOM.actionPromptKey = document.getElementById('action-prompt-key');
+    DOM.actionPromptText = document.getElementById('action-prompt-text');
     DOM.mobileControls = document.getElementById('mobile-controls');
     DOM.joystickBase = document.getElementById('joystick-base');
     DOM.joystickStick = document.getElementById('joystick-stick');
     DOM.mobilePauseBtn = document.getElementById('mobile-pause-btn');
+    DOM.mobileJumpBtn = document.getElementById('mobile-jump-btn');
+    DOM.mobileDashBtn = document.getElementById('mobile-dash-btn');
+    DOM.mobileInteractBtn = document.getElementById('mobile-interact-btn');
     DOM.gameContainer = document.getElementById('game-container');
     DOM.difficultyBtns = document.querySelectorAll('.diff-btn');
 }
@@ -199,6 +250,423 @@ class ParticleSystem {
 
 const particleSystem = new ParticleSystem();
 
+// ============ 物理/碰撞系统 ============
+let _colliderIdSeq = 1;
+
+function getFrameScale(delta) {
+    if (!Number.isFinite(delta) || delta <= 0) return 1;
+    return Math.min(delta * CONFIG.PHYSICS.FIXED_FPS, CONFIG.PHYSICS.MAX_FRAME_SCALE);
+}
+
+function resetWorldSystems() {
+    GameState.colliders = [];
+    GameState.zones = [];
+    GameState.interactables = [];
+    GameState.traps = [];
+    _colliderIdSeq = 1;
+}
+
+function addCircleCollider({ x, z, radius, height = Infinity, blocksLOS = true, blocksMovement = true, tag = '' }) {
+    GameState.colliders.push({
+        id: `c${_colliderIdSeq++}`,
+        shape: 'circle',
+        x, z, radius,
+        height,
+        blocksLOS,
+        blocksMovement,
+        tag
+    });
+}
+
+function addBoxCollider({ minX, maxX, minZ, maxZ, height = Infinity, blocksLOS = true, blocksMovement = true, tag = '' }) {
+    GameState.colliders.push({
+        id: `b${_colliderIdSeq++}`,
+        shape: 'box',
+        minX, maxX, minZ, maxZ,
+        height,
+        blocksLOS,
+        blocksMovement,
+        tag
+    });
+}
+
+function clampToWorldXZ(pos) {
+    const boundary = CONFIG.WORLD_SIZE - 1;
+    pos.x = Math.max(-boundary, Math.min(boundary, pos.x));
+    pos.z = Math.max(-boundary, Math.min(boundary, pos.z));
+    return pos;
+}
+
+function isCollidingWithColliderXZ(x, z, radius, y, collider) {
+    if (collider.blocksMovement === false) return false;
+    const h = Number.isFinite(collider.height) ? collider.height : Infinity;
+    if (y > h + 0.05) return false;
+
+    if (collider.shape === 'circle') {
+        const dx = x - collider.x;
+        const dz = z - collider.z;
+        const rr = radius + collider.radius;
+        return (dx * dx + dz * dz) < rr * rr;
+    }
+
+    if (collider.shape === 'box') {
+        const cx = Math.max(collider.minX, Math.min(collider.maxX, x));
+        const cz = Math.max(collider.minZ, Math.min(collider.maxZ, z));
+        const dx = x - cx;
+        const dz = z - cz;
+        return (dx * dx + dz * dz) < radius * radius;
+    }
+
+    return false;
+}
+
+function isPositionBlockedXZ(x, z, radius, y = 0) {
+    for (const c of GameState.colliders) {
+        if (isCollidingWithColliderXZ(x, z, radius, y, c)) return true;
+    }
+    return false;
+}
+
+function resolveCollisionsXZ(pos, radius, y = 0) {
+    const out = new THREE.Vector3(pos.x, pos.y, pos.z);
+
+    for (let iter = 0; iter < 4; iter++) {
+        let corrected = false;
+
+        for (const c of GameState.colliders) {
+            if (c.blocksMovement === false) continue;
+            const h = Number.isFinite(c.height) ? c.height : Infinity;
+            if (y > h + 0.05) continue;
+
+            if (c.shape === 'circle') {
+                const dx = out.x - c.x;
+                const dz = out.z - c.z;
+                const rr = radius + c.radius;
+                const dist2 = dx * dx + dz * dz;
+                if (dist2 >= rr * rr) continue;
+
+                const dist = Math.sqrt(dist2);
+                let nx, nz, overlap;
+                if (dist < 1e-6) {
+                    // 正好重叠：给一个随机推出方向，避免除 0
+                    const a = Math.random() * Math.PI * 2;
+                    nx = Math.cos(a);
+                    nz = Math.sin(a);
+                    overlap = rr;
+                } else {
+                    nx = dx / dist;
+                    nz = dz / dist;
+                    overlap = rr - dist;
+                }
+                out.x += nx * overlap;
+                out.z += nz * overlap;
+                corrected = true;
+            } else if (c.shape === 'box') {
+                const cx = Math.max(c.minX, Math.min(c.maxX, out.x));
+                const cz = Math.max(c.minZ, Math.min(c.maxZ, out.z));
+                let dx = out.x - cx;
+                let dz = out.z - cz;
+                const dist2 = dx * dx + dz * dz;
+                if (dist2 >= radius * radius) continue;
+
+                if (dist2 < 1e-10) {
+                    // 在盒子内部：推到最近边界外 + 半径
+                    const left = out.x - c.minX;
+                    const right = c.maxX - out.x;
+                    const near = out.z - c.minZ;
+                    const far = c.maxZ - out.z;
+                    const minEdge = Math.min(left, right, near, far);
+
+                    if (minEdge === left) out.x = c.minX - radius;
+                    else if (minEdge === right) out.x = c.maxX + radius;
+                    else if (minEdge === near) out.z = c.minZ - radius;
+                    else out.z = c.maxZ + radius;
+                } else {
+                    const dist = Math.sqrt(dist2);
+                    const overlap = radius - dist;
+                    out.x += (dx / dist) * overlap;
+                    out.z += (dz / dist) * overlap;
+                }
+                corrected = true;
+            }
+        }
+
+        clampToWorldXZ(out);
+        if (!corrected) break;
+    }
+
+    return out;
+}
+
+function moveWithCollisions(entity, moveX, moveZ, radius, y = 0) {
+    // 分轴移动，手感更像“蹭墙滑动”
+    const posX = new THREE.Vector3(entity.position.x + moveX, 0, entity.position.z);
+    const resolvedX = resolveCollisionsXZ(clampToWorldXZ(posX), radius, y);
+    entity.position.x = resolvedX.x;
+    entity.position.z = resolvedX.z;
+
+    const posZ = new THREE.Vector3(entity.position.x, 0, entity.position.z + moveZ);
+    const resolvedZ = resolveCollisionsXZ(clampToWorldXZ(posZ), radius, y);
+    entity.position.x = resolvedZ.x;
+    entity.position.z = resolvedZ.z;
+}
+
+function segmentIntersectsCircle(ax, az, bx, bz, cx, cz, r) {
+    const abx = bx - ax;
+    const abz = bz - az;
+    const acx = cx - ax;
+    const acz = cz - az;
+    const abLen2 = abx * abx + abz * abz;
+    if (abLen2 < 1e-10) {
+        const dx = ax - cx;
+        const dz = az - cz;
+        return (dx * dx + dz * dz) <= r * r;
+    }
+    let t = (acx * abx + acz * abz) / abLen2;
+    t = Math.max(0, Math.min(1, t));
+    const px = ax + abx * t;
+    const pz = az + abz * t;
+    const dx = px - cx;
+    const dz = pz - cz;
+    return (dx * dx + dz * dz) <= r * r;
+}
+
+function segmentIntersectsAABB(ax, az, bx, bz, minX, maxX, minZ, maxZ) {
+    let tmin = 0;
+    let tmax = 1;
+    const dx = bx - ax;
+    const dz = bz - az;
+
+    if (Math.abs(dx) < 1e-10) {
+        if (ax < minX || ax > maxX) return false;
+    } else {
+        const ood = 1 / dx;
+        let t1 = (minX - ax) * ood;
+        let t2 = (maxX - ax) * ood;
+        if (t1 > t2) [t1, t2] = [t2, t1];
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) return false;
+    }
+
+    if (Math.abs(dz) < 1e-10) {
+        if (az < minZ || az > maxZ) return false;
+    } else {
+        const ood = 1 / dz;
+        let t1 = (minZ - az) * ood;
+        let t2 = (maxZ - az) * ood;
+        if (t1 > t2) [t1, t2] = [t2, t1];
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) return false;
+    }
+
+    return true;
+}
+
+function hasLineOfSight(from, to) {
+    const ax = from.x, az = from.z;
+    const bx = to.x, bz = to.z;
+
+    for (const c of GameState.colliders) {
+        if (!c.blocksLOS) continue;
+
+        if (c.shape === 'circle') {
+            if (segmentIntersectsCircle(ax, az, bx, bz, c.x, c.z, c.radius)) return false;
+        } else if (c.shape === 'box') {
+            if (segmentIntersectsAABB(ax, az, bx, bz, c.minX, c.maxX, c.minZ, c.maxZ)) return false;
+        }
+    }
+
+    return true;
+}
+
+function getZoneSpeedFactor(x, z, who = 'player') {
+    let factor = 1;
+    for (const zone of GameState.zones) {
+        const dx = x - zone.x;
+        const dz = z - zone.z;
+        if (dx * dx + dz * dz <= zone.radius * zone.radius) {
+            factor *= who === 'enemy' ? (zone.enemyFactor ?? 1) : (zone.playerFactor ?? 1);
+        }
+    }
+    return factor;
+}
+
+// ============ 互动系统 ============
+let _interactableIdSeq = 1;
+
+function addInteractable({ type, label, x, z, radius = CONFIG.INTERACT.RANGE, cooldown = 5000, onUse }) {
+    GameState.interactables.push({
+        id: `i${_interactableIdSeq++}`,
+        type,
+        label,
+        x,
+        z,
+        radius,
+        cooldown,
+        cooldownUntil: 0,
+        onUse
+    });
+}
+
+function getNearestInteractable() {
+    if (!GameState.player) return null;
+    const px = GameState.player.position.x;
+    const pz = GameState.player.position.z;
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const it of GameState.interactables) {
+        const dx = it.x - px;
+        const dz = it.z - pz;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist <= it.radius && dist < bestDist) {
+            best = it;
+            bestDist = dist;
+        }
+    }
+
+    if (!best) return null;
+    return { it: best, dist: bestDist };
+}
+
+function setActionPrompt(visible, keyText = 'E', message = '', disabled = false) {
+    if (!DOM.actionPrompt || !DOM.actionPromptKey || !DOM.actionPromptText) return;
+    if (!visible) {
+        DOM.actionPrompt.classList.add('hidden');
+        return;
+    }
+    DOM.actionPrompt.classList.remove('hidden');
+    DOM.actionPrompt.classList.toggle('disabled', !!disabled);
+    DOM.actionPromptKey.textContent = keyText;
+    DOM.actionPromptText.textContent = message;
+}
+
+function updateActionPrompt() {
+    if (!GameState.isPlaying || GameState.isPaused) {
+        setActionPrompt(false);
+        return;
+    }
+
+    const nearest = getNearestInteractable();
+    if (!nearest) {
+        setActionPrompt(false);
+        return;
+    }
+
+    const now = Date.now();
+    const key = GameState.isMobile ? '🤚' : 'E';
+    const ready = now >= nearest.it.cooldownUntil;
+    if (ready) {
+        setActionPrompt(true, key, nearest.it.label, false);
+    } else {
+        const left = Math.ceil((nearest.it.cooldownUntil - now) / 1000);
+        setActionPrompt(true, key, `${nearest.it.label}（冷却 ${left}s）`, true);
+    }
+}
+
+function attemptInteract() {
+    if (!GameState.isPlaying || GameState.isPaused) return;
+    const now = Date.now();
+    if (now < GameState.controlLockedUntil) return;
+    if (now < GameState.hiddenUntil) return;
+
+    const nearest = getNearestInteractable();
+    if (!nearest) return;
+
+    if (now < nearest.it.cooldownUntil) {
+        const left = Math.ceil((nearest.it.cooldownUntil - now) / 1000);
+        showCollectPopup(`⏳ 冷却 ${left}s`);
+        return;
+    }
+
+    nearest.it.cooldownUntil = now + nearest.it.cooldown;
+    try {
+        nearest.it.onUse?.(nearest.it);
+    } catch (e) {
+        console.error('Interact error', e);
+    }
+}
+
+function clearEnemyDistraction() {
+    if (GameState.enemyDistractionMesh) {
+        GameState.scene.remove(GameState.enemyDistractionMesh);
+        GameState.enemyDistractionMesh = null;
+    }
+}
+
+function distractEnemyTo(x, z, duration = 3500) {
+    if (!GameState.enemy || !GameState.scene) return;
+    const now = Date.now();
+
+    clearEnemyDistraction();
+
+    // 诱饵可视化（臭袜子）
+    const sock = new THREE.Mesh(
+        new THREE.BoxGeometry(0.45, 0.2, 0.25),
+        new THREE.MeshStandardMaterial({ color: 0x6B4F2A, roughness: 0.95 })
+    );
+    sock.position.set(x, 0.12, z);
+    sock.rotation.y = Math.random() * Math.PI * 2;
+    sock.castShadow = true;
+    GameState.scene.add(sock);
+    GameState.enemyDistractionMesh = sock;
+
+    GameState.enemyDistractedUntil = now + duration;
+    GameState.enemyDistractionPos.set(x, 0, z);
+
+    // 结束后自动清理（只清理当前这个）
+    setTimeout(() => {
+        if (GameState.enemyDistractionMesh === sock) {
+            clearEnemyDistraction();
+        }
+    }, duration + 200);
+}
+
+function spawnBananaTrap(x, z) {
+    if (!GameState.scene) return;
+    const now = Date.now();
+
+    const banana = new THREE.Mesh(
+        new THREE.TorusGeometry(0.28, 0.1, 8, 14, Math.PI),
+        new THREE.MeshStandardMaterial({ color: 0xFFD93D, roughness: 0.6, metalness: 0.05 })
+    );
+    banana.rotation.x = Math.PI / 2;
+    banana.rotation.z = Math.random() * Math.PI * 2;
+    banana.position.set(x, 0.08, z);
+    banana.castShadow = true;
+    GameState.scene.add(banana);
+
+    GameState.traps.push({
+        type: 'banana',
+        mesh: banana,
+        x,
+        z,
+        radius: 1.1,
+        expiresAt: now + 12000
+    });
+
+    particleSystem.emit(new THREE.Vector3(x, 0.12, z), 0xFFD93D, 6);
+}
+
+function updateDangerEffects(distToPlayer) {
+    if (!DOM.gameUI) return;
+    const now = Date.now();
+    const hidden = now < GameState.hiddenUntil;
+
+    if (!hidden && distToPlayer < 6.2) {
+        DOM.gameUI.classList.add('danger');
+        const interval = distToPlayer < 3.2 ? 240 : 420;
+        if (now >= GameState.dangerBeepAt) {
+            AudioManager.playTone(distToPlayer < 3.2 ? 180 : 140, 0.04, 'sine');
+            GameState.dangerBeepAt = now + interval;
+        }
+    } else {
+        DOM.gameUI.classList.remove('danger');
+    }
+}
+
 // ============ 加载管理 ============
 async function loadGame() {
     const steps = [
@@ -292,6 +760,8 @@ function addLights() {
 
 // ============ 创建游戏世界 ============
 function createWorld() {
+    resetWorldSystems();
+
     // 地面
     const groundGeometry = new THREE.PlaneGeometry(CONFIG.WORLD_SIZE * 2.5, CONFIG.WORLD_SIZE * 2.5, 50, 50);
     const groundMaterial = new THREE.MeshStandardMaterial({
@@ -299,6 +769,19 @@ function createWorld() {
         roughness: 0.9,
         metalness: 0
     });
+
+    // 贴图（更精美）
+    try {
+        const textureLoader = new THREE.TextureLoader();
+        const grassTexture = textureLoader.load('assets/grass-texture.jpg');
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(18, 18);
+        groundMaterial.map = grassTexture;
+        groundMaterial.needsUpdate = true;
+    } catch (e) {
+        // 忽略贴图失败（不影响玩法）
+    }
 
     // 添加地面起伏
     const vertices = groundGeometry.attributes.position.array;
@@ -328,12 +811,60 @@ function createWorld() {
     noharaHouse.position.set(-18, 0, -18);
     noharaHouse.rotation.y = Math.PI / 4;
     GameState.scene.add(noharaHouse);
+    addCircleCollider({ x: noharaHouse.position.x, z: noharaHouse.position.z, radius: 4.9, height: 3.2, blocksLOS: true, blocksMovement: true, tag: 'house' });
+    addInteractable({
+        type: 'hide_house',
+        label: '🏠 躲进野原家',
+        x: noharaHouse.position.x,
+        z: noharaHouse.position.z,
+        radius: 6.4,
+        cooldown: 9500,
+        onUse: () => {
+            const now = Date.now();
+            const duration = 1900;
+            GameState.hiddenUntil = now + duration;
+            GameState.controlLockedUntil = now + duration;
+            GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + duration + 120);
+            GameState.playerVelY = 0;
+            GameState.playerBaseY = 0;
+            GameState.playerOnGround = true;
+            GameState.dashUntil = 0;
+            GameState.forcedMoveUntil = 0;
+            GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
+            showCollectPopup('🏠 躲起来!');
+            AudioManager.playTone(330, 0.08);
+        }
+    });
 
     // 幼稚园
     const kindergarten = createKindergarten();
     kindergarten.position.set(18, 0, -18);
     kindergarten.rotation.y = -Math.PI / 4;
     GameState.scene.add(kindergarten);
+    addCircleCollider({ x: kindergarten.position.x, z: kindergarten.position.z, radius: 6.8, height: 3.5, blocksLOS: true, blocksMovement: true, tag: 'kindergarten' });
+    addInteractable({
+        type: 'hide_kindergarten',
+        label: '🏫 躲进幼稚园',
+        x: kindergarten.position.x,
+        z: kindergarten.position.z,
+        radius: 8.4,
+        cooldown: 11000,
+        onUse: () => {
+            const now = Date.now();
+            const duration = 2100;
+            GameState.hiddenUntil = now + duration;
+            GameState.controlLockedUntil = now + duration;
+            GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + duration + 150);
+            GameState.playerVelY = 0;
+            GameState.playerBaseY = 0;
+            GameState.playerOnGround = true;
+            GameState.dashUntil = 0;
+            GameState.forcedMoveUntil = 0;
+            GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
+            showCollectPopup('🏫 快藏好!');
+            AudioManager.playTone(360, 0.08);
+        }
+    });
 
     // 公园设施
     createParkFeatures();
@@ -350,7 +881,11 @@ function createWorld() {
         );
         tree.rotation.y = Math.random() * Math.PI * 2;
         GameState.scene.add(tree);
+        addCircleCollider({ x: tree.position.x, z: tree.position.z, radius: 1.0, height: 2.6, blocksLOS: true, blocksMovement: true, tag: 'tree' });
     }
+
+    // 灌木迷宫（可跳跃越过，让玩法更丰富）
+    createBushObstacles();
 
     // 围栏
     createFence();
@@ -530,6 +1065,34 @@ function createParkFeatures() {
 
     slide.position.set(10, 0, 10);
     GameState.scene.add(slide);
+    addCircleCollider({ x: slide.position.x, z: slide.position.z, radius: 2.2, height: 1.6, blocksLOS: false, blocksMovement: true, tag: 'slide' });
+    addInteractable({
+        type: 'slide_boost',
+        label: '🛝 滑梯冲刺',
+        x: slide.position.x,
+        z: slide.position.z,
+        radius: 3.7,
+        cooldown: 5200,
+        onUse: () => {
+            if (!GameState.player) return;
+            const now = Date.now();
+            const dir = new THREE.Vector3(
+                GameState.player.position.x - slide.position.x,
+                0,
+                GameState.player.position.z - slide.position.z
+            );
+            if (dir.length() < 0.01) {
+                dir.set(Math.sin(GameState.player.rotation.y), 0, Math.cos(GameState.player.rotation.y));
+            }
+            dir.normalize();
+            GameState.forcedMoveDir.copy(dir);
+            GameState.forcedMoveMultiplier = 3.35;
+            GameState.forcedMoveUntil = now + 700;
+            GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + 750);
+            showCollectPopup('🛝 冲刺!');
+            AudioManager.playTone(880, 0.07, 'square');
+        }
+    });
 
     // 秋千
     const swing = new THREE.Group();
@@ -560,6 +1123,41 @@ function createParkFeatures() {
 
     swing.position.set(-10, 0, 10);
     GameState.scene.add(swing);
+    addCircleCollider({ x: swing.position.x, z: swing.position.z, radius: 2.4, height: 2.2, blocksLOS: false, blocksMovement: true, tag: 'swing' });
+    addInteractable({
+        type: 'swing_launch',
+        label: '🎠 秋千弹射',
+        x: swing.position.x,
+        z: swing.position.z,
+        radius: 3.8,
+        cooldown: 6200,
+        onUse: () => {
+            if (!GameState.player) return;
+            const now = Date.now();
+
+            // 向外弹射 + 高跳
+            const dir = new THREE.Vector3(
+                GameState.player.position.x - swing.position.x,
+                0,
+                GameState.player.position.z - swing.position.z
+            );
+            if (dir.length() < 0.01) {
+                dir.set(Math.sin(GameState.player.rotation.y), 0, Math.cos(GameState.player.rotation.y));
+            }
+            dir.normalize();
+
+            GameState.playerOnGround = false;
+            GameState.playerVelY = Math.max(GameState.playerVelY, CONFIG.PHYSICS.JUMP_VELOCITY * 1.25);
+
+            GameState.forcedMoveDir.copy(dir);
+            GameState.forcedMoveMultiplier = 2.1;
+            GameState.forcedMoveUntil = now + 420;
+            GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + 950);
+
+            showCollectPopup('🎠 弹射!');
+            AudioManager.playTone(660, 0.07, 'triangle');
+        }
+    });
 
     // 沙坑
     const sandboxGeometry = new THREE.CylinderGeometry(3, 3, 0.3, 6);
@@ -568,6 +1166,66 @@ function createParkFeatures() {
     sandbox.position.set(0, 0.15, 0);
     sandbox.receiveShadow = true;
     GameState.scene.add(sandbox);
+
+    // 沙坑区域：踩进去会变慢（更刺激）
+    GameState.zones.push({
+        type: 'sand',
+        x: sandbox.position.x,
+        z: sandbox.position.z,
+        radius: 3.2,
+        playerFactor: 0.62,
+        enemyFactor: 0.88
+    });
+
+    addInteractable({
+        type: 'sandbox_dig',
+        label: '⛏️ 沙坑挖宝',
+        x: sandbox.position.x,
+        z: sandbox.position.z,
+        radius: 3.4,
+        cooldown: 7800,
+        onUse: () => {
+            const now = Date.now();
+            const digTime = 1100;
+            GameState.controlLockedUntil = Math.max(GameState.controlLockedUntil, now + digTime);
+            GameState.dashUntil = 0;
+            GameState.forcedMoveUntil = 0;
+            showCollectPopup('⛏️ 挖呀挖...');
+            AudioManager.playTone(220, 0.08, 'sawtooth');
+
+            setTimeout(() => {
+                if (!GameState.isPlaying) return;
+                // 如果期间被抓/隐藏，就不给奖励（风险）
+                if (Date.now() < GameState.hiddenUntil) return;
+
+                const roll = Math.random();
+                if (roll < 0.45) {
+                    const bonus = 45 + Math.floor(Math.random() * 35);
+                    GameState.score += bonus;
+                    updateScoreDisplay();
+                    showCollectPopup(`🎁 +${bonus}`);
+                    particleSystem.emit(GameState.player.position, 0xFFD700, 10);
+                } else if (roll < 0.68) {
+                    if (GameState.lives < CONFIG.INITIAL_LIVES) {
+                        GameState.lives++;
+                        updateLivesDisplay();
+                        showCollectPopup('❤️ +1');
+                    } else {
+                        const bonus = 20;
+                        GameState.score += bonus;
+                        updateScoreDisplay();
+                        showCollectPopup(`❤️ 变分数 +${bonus}`);
+                    }
+                } else if (roll < 0.86) {
+                    showCollectPopup('🧦 臭袜子诱饵!');
+                    distractEnemyTo(GameState.player.position.x, GameState.player.position.z, 3600);
+                } else {
+                    showCollectPopup('🍌 香蕉皮!');
+                    spawnBananaTrap(GameState.player.position.x, GameState.player.position.z);
+                }
+            }, digTime);
+        }
+    });
 }
 
 // ============ 创建树 ============
@@ -602,6 +1260,84 @@ function createTree() {
     });
 
     return tree;
+}
+
+// ============ 灌木（可跳跃越过的小障碍） ============
+function createBush(width = 2.4, depth = 1.4, height = 0.7) {
+    const bush = new THREE.Group();
+    bush.name = 'bush';
+
+    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.95 });
+    const topMaterial = new THREE.MeshStandardMaterial({ color: 0x32CD32, roughness: 0.95 });
+
+    const base = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), baseMaterial);
+    base.position.y = height / 2;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    bush.add(base);
+
+    // 蓬松顶部
+    const puffCount = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < puffCount; i++) {
+        const r = 0.25 + Math.random() * 0.35;
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), topMaterial);
+        puff.position.set(
+            (Math.random() - 0.5) * width * 0.8,
+            height * (0.55 + Math.random() * 0.35),
+            (Math.random() - 0.5) * depth * 0.8
+        );
+        puff.castShadow = true;
+        bush.add(puff);
+    }
+
+    bush.userData = { height };
+    return bush;
+}
+
+function createBushObstacles() {
+    const count = 16;
+    const margin = 6;
+
+    for (let i = 0; i < count; i++) {
+        let placed = false;
+
+        for (let t = 0; t < 80; t++) {
+            const width = 1.6 + Math.random() * 2.6;
+            const depth = 1.0 + Math.random() * 1.8;
+            const height = 0.6 + Math.random() * 0.35;
+
+            const x = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
+            const z = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
+
+            // 给沙坑留出活动空间
+            if (Math.abs(x) < 4.2 && Math.abs(z) < 4.2) continue;
+
+            // 用“半对角 + 余量”做快速避障判断
+            const r = Math.sqrt((width * 0.5) ** 2 + (depth * 0.5) ** 2) + 0.9;
+            if (isPositionBlockedXZ(x, z, r, 0)) continue;
+
+            const bush = createBush(width, depth, height);
+            bush.position.set(x, 0, z);
+            bush.rotation.y = Math.random() * Math.PI * 2;
+            GameState.scene.add(bush);
+
+            addBoxCollider({
+                minX: x - width / 2,
+                maxX: x + width / 2,
+                minZ: z - depth / 2,
+                maxZ: z + depth / 2,
+                height: height + 0.05, // 低矮：跳起来可越过
+                blocksLOS: true,
+                blocksMovement: true,
+                tag: 'bush'
+            });
+
+            placed = true;
+            break;
+        }
+
+        if (!placed) break;
+    }
 }
 
 // ============ 创建围栏 ============
@@ -863,7 +1599,8 @@ function createMisae() {
     rightLeg.position.set(0.2, 0.05, 0);
     character.add(rightLeg);
 
-    character.position.set(-15, 0, -15);
+    // 避免出生点卡进房子碰撞体
+    character.position.set(-12, 0, -15);
     return character;
 }
 
@@ -1078,13 +1815,85 @@ function createPowerup(config) {
 }
 
 // ============ 辅助函数 ============
-function spawnAtRandomPosition(obj) {
-    const margin = 5;
+function spawnAtRandomPosition(obj, opts = {}) {
+    const margin = opts.margin ?? 5;
+    const y = opts.y ?? 0.5;
+    const radius = opts.radius ?? 0.9;
+    const tries = opts.tries ?? 80;
+
+    for (let i = 0; i < tries; i++) {
+        const x = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
+        const z = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
+        if (!isPositionBlockedXZ(x, z, radius, y)) {
+            obj.position.set(x, y, z);
+            return;
+        }
+    }
+
+    // 兜底：实在找不到就随便放（极少发生）
     obj.position.set(
         (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2,
-        0.5,
+        y,
         (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2
     );
+}
+
+function getMoveInputNormalized() {
+    let dx = 0, dz = 0;
+
+    // 键盘输入
+    if (GameState.keys['w'] || GameState.keys['arrowup'] || GameState.keys['ArrowUp']) dz -= 1;
+    if (GameState.keys['s'] || GameState.keys['arrowdown'] || GameState.keys['ArrowDown']) dz += 1;
+    if (GameState.keys['a'] || GameState.keys['arrowleft'] || GameState.keys['ArrowLeft']) dx -= 1;
+    if (GameState.keys['d'] || GameState.keys['arrowright'] || GameState.keys['ArrowRight']) dx += 1;
+
+    // 摇杆输入
+    if (GameState.isMobile) {
+        dx += GameState.joystickInput.x;
+        dz += GameState.joystickInput.y;
+    }
+
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag > 1) {
+        dx /= mag;
+        dz /= mag;
+    }
+
+    return { dx, dz, moving: mag > 0.001 };
+}
+
+function requestJump() {
+    if (!GameState.isPlaying || GameState.isPaused) return;
+    const now = Date.now();
+    // 短缓冲：手感更顺
+    GameState.jumpBufferedUntil = now + 160;
+}
+
+function requestDash() {
+    if (!GameState.isPlaying || GameState.isPaused) return;
+    const now = Date.now();
+    if (now < GameState.dashCooldownUntil) {
+        showCollectPopup('⚡ 冷却中');
+        return;
+    }
+
+    if (now < GameState.controlLockedUntil) return;
+    if (now < GameState.hiddenUntil) return;
+
+    const input = getMoveInputNormalized();
+    if (input.moving) {
+        GameState.dashDir.set(input.dx, 0, input.dz);
+    } else if (GameState.player) {
+        // 没输入就按面向方向冲刺
+        GameState.dashDir.set(Math.sin(GameState.player.rotation.y), 0, Math.cos(GameState.player.rotation.y));
+    } else {
+        GameState.dashDir.set(0, 0, 1);
+    }
+
+    GameState.dashUntil = now + CONFIG.DASH.DURATION;
+    GameState.dashCooldownUntil = now + CONFIG.DASH.COOLDOWN;
+    GameState.noCatchUntil = Math.max(GameState.noCatchUntil, GameState.dashUntil + 80);
+    AudioManager.playTone(520, 0.06);
 }
 
 // ============ 控制系统 ============
@@ -1096,6 +1905,19 @@ function setupControls() {
 
         if (e.key === 'Escape' && GameState.isPlaying && !GameState.isPaused) {
             togglePause();
+        }
+
+        if (!e.repeat) {
+            if (e.code === 'Space') {
+                requestJump();
+                e.preventDefault();
+            }
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                requestDash();
+            }
+            if (e.key.toLowerCase() === 'e') {
+                attemptInteract();
+            }
         }
     });
 
@@ -1169,53 +1991,95 @@ function setupMobileControls() {
 function updatePlayer() {
     if (!GameState.isPlaying || GameState.isPaused || !GameState.player) return;
 
-    let dx = 0, dz = 0;
+    const now = Date.now();
+    const delta = Math.min(GameState.delta || 1 / CONFIG.PHYSICS.FIXED_FPS, 1 / 20);
+    const scale = GameState.frameScale ?? 1;
 
-    // 键盘输入
-    if (GameState.keys['w'] || GameState.keys['arrowup'] || GameState.keys['ArrowUp']) dz -= 1;
-    if (GameState.keys['s'] || GameState.keys['arrowdown'] || GameState.keys['ArrowDown']) dz += 1;
-    if (GameState.keys['a'] || GameState.keys['arrowleft'] || GameState.keys['ArrowLeft']) dx -= 1;
-    if (GameState.keys['d'] || GameState.keys['arrowright'] || GameState.keys['ArrowRight']) dx += 1;
+    const locked = now < GameState.controlLockedUntil || now < GameState.hiddenUntil;
 
-    // 摇杆输入
-    if (GameState.isMobile) {
-        dx += GameState.joystickInput.x;
-        dz += GameState.joystickInput.y;
+    const input = getMoveInputNormalized();
+    let dirX = locked ? 0 : input.dx;
+    let dirZ = locked ? 0 : input.dz;
+    let moving = !locked && input.moving;
+
+    // 跳跃缓冲（空格）
+    if (!locked && now < GameState.jumpBufferedUntil && GameState.playerOnGround) {
+        GameState.playerOnGround = false;
+        GameState.playerVelY = CONFIG.PHYSICS.JUMP_VELOCITY;
+        GameState.jumpBufferedUntil = 0;
+        AudioManager.playTone(740, 0.06);
     }
 
-    // 归一化
-    const mag = Math.sqrt(dx * dx + dz * dz);
-    if (mag > 1) {
-        dx /= mag;
-        dz /= mag;
+    // 竖直物理
+    if (!GameState.playerOnGround) {
+        GameState.playerVelY -= CONFIG.PHYSICS.GRAVITY * delta;
+        GameState.playerBaseY += GameState.playerVelY * delta;
+        if (GameState.playerBaseY <= 0) {
+            GameState.playerBaseY = 0;
+            GameState.playerVelY = 0;
+            GameState.playerOnGround = true;
+        }
+    } else {
+        GameState.playerBaseY = 0;
+        GameState.playerVelY = 0;
     }
 
-    // 速度加成
+    // 场景强制移动（滑梯/秋千等） > 冲刺（Shift）
+    const forced = !locked && now < GameState.forcedMoveUntil;
+    const dashing = !forced && !locked && now < GameState.dashUntil;
+    if (forced) {
+        dirX = GameState.forcedMoveDir.x;
+        dirZ = GameState.forcedMoveDir.z;
+        moving = true;
+    } else if (dashing) {
+        dirX = GameState.dashDir.x;
+        dirZ = GameState.dashDir.z;
+        moving = true;
+    }
+
+    // 速度（带地形/道具/冲刺加成）
     let speed = CONFIG.PLAYER_SPEED;
     if (GameState.speedBoost) speed *= 1.5;
+    speed *= getZoneSpeedFactor(GameState.player.position.x, GameState.player.position.z, 'player');
+    if (forced) speed *= GameState.forcedMoveMultiplier;
+    else if (dashing) speed *= CONFIG.DASH.SPEED_MULTIPLIER;
 
-    // 应用移动
-    const newX = GameState.player.position.x + dx * speed;
-    const newZ = GameState.player.position.z + dz * speed;
-
-    const boundary = CONFIG.WORLD_SIZE - 1;
-    GameState.player.position.x = Math.max(-boundary, Math.min(boundary, newX));
-    GameState.player.position.z = Math.max(-boundary, Math.min(boundary, newZ));
-
-    // 面向移动方向和走路动画
-    if (dx !== 0 || dz !== 0) {
-        GameState.player.rotation.y = Math.atan2(dx, dz);
-        const time = GameState.clock.getElapsedTime();
-        GameState.player.position.y = Math.abs(Math.sin(time * 12)) * 0.12;
-    } else {
-        GameState.player.position.y = 0;
+    if (dirX !== 0 || dirZ !== 0) {
+        moveWithCollisions(
+            GameState.player,
+            dirX * speed * scale,
+            dirZ * speed * scale,
+            CONFIG.PLAYER_RADIUS,
+            Math.max(0, GameState.playerBaseY)
+        );
     }
 
-    // 无敌闪烁效果
-    if (GameState.isInvincible) {
-        GameState.player.visible = Math.floor(Date.now() / 100) % 2 === 0;
+    // 面向移动/冲刺方向
+    if (moving) {
+        GameState.player.rotation.y = Math.atan2(dirX, dirZ);
+    }
+
+    // 走路起伏（仅落地时）
+    const time = GameState.clock.getElapsedTime();
+    const walkBob = (GameState.playerOnGround && moving && !dashing && !forced) ? Math.abs(Math.sin(time * 12)) * 0.12 : 0;
+    GameState.player.position.y = GameState.playerBaseY + walkBob;
+
+    // 冲刺尾迹
+    if ((dashing || forced) && Math.random() < 0.45) {
+        particleSystem.emit(
+            new THREE.Vector3(GameState.player.position.x, 0.2 + GameState.playerBaseY, GameState.player.position.z),
+            forced ? 0xFFD700 : 0x00CED1,
+            2
+        );
+    }
+
+    // 无敌/冲刺保护闪烁 + 躲藏隐藏
+    if (now < GameState.hiddenUntil) {
+        GameState.player.visible = false;
     } else {
-        GameState.player.visible = true;
+        const flashing = GameState.isInvincible || now < GameState.noCatchUntil;
+        if (flashing) GameState.player.visible = Math.floor(now / 100) % 2 === 0;
+        else GameState.player.visible = true;
     }
 
     // 相机跟随
@@ -1224,32 +2088,155 @@ function updatePlayer() {
     GameState.camera.position.x += (targetCamX - GameState.camera.position.x) * 0.05;
     GameState.camera.position.z += (targetCamZ - GameState.camera.position.z) * 0.05;
     GameState.camera.lookAt(GameState.player.position.x, 0, GameState.player.position.z);
+
+    updateActionPrompt();
 }
 
 // ============ 敌人AI ============
 function updateEnemy() {
     if (!GameState.isPlaying || GameState.isPaused || !GameState.enemy || !GameState.player) return;
 
+    const now = Date.now();
     const config = CONFIG.DIFFICULTY[GameState.difficulty];
-    let target = GameState.player;
 
-    // 有几率追小白
-    if (GameState.shiro && Math.random() < 0.01) {
-        const distToShiro = GameState.enemy.position.distanceTo(GameState.shiro.position);
-        const distToPlayer = GameState.enemy.position.distanceTo(GameState.player.position);
-        if (distToShiro < distToPlayer * 0.7) {
-            target = GameState.shiro;
+    // 清理过期诱饵
+    if (now >= GameState.enemyDistractedUntil && GameState.enemyDistractionMesh) {
+        clearEnemyDistraction();
+    }
+
+    // 处理陷阱（香蕉皮）
+    for (let i = GameState.traps.length - 1; i >= 0; i--) {
+        const trap = GameState.traps[i];
+        if (now >= trap.expiresAt) {
+            GameState.scene.remove(trap.mesh);
+            GameState.traps.splice(i, 1);
+            continue;
+        }
+        const dx = GameState.enemy.position.x - trap.x;
+        const dz = GameState.enemy.position.z - trap.z;
+        const rr = (trap.radius ?? 1) + CONFIG.ENEMY_RADIUS;
+        if (dx * dx + dz * dz <= rr * rr) {
+            GameState.scene.remove(trap.mesh);
+            GameState.traps.splice(i, 1);
+            GameState.enemyStunnedUntil = now + 1200;
+            particleSystem.emit(GameState.enemy.position, 0xFFD93D, 12);
+            AudioManager.playTone(110, 0.12, 'square');
+            showCollectPopup('💥 妈妈滑倒!');
         }
     }
 
-    const dx = target.position.x - GameState.enemy.position.x;
-    const dz = target.position.z - GameState.enemy.position.z;
-    const distance = Math.sqrt(dx * dx + dz * dz);
+    // 眩晕：原地打滑
+    if (now < GameState.enemyStunnedUntil) {
+        const time = GameState.clock.getElapsedTime();
+        GameState.enemy.position.y = Math.abs(Math.sin(time * 10)) * 0.1;
+        GameState.enemy.rotation.z = Math.sin(time * 18) * 0.12;
 
-    if (distance > 0.1) {
-        GameState.enemy.position.x += (dx / distance) * config.enemySpeed;
-        GameState.enemy.position.z += (dz / distance) * config.enemySpeed;
-        GameState.enemy.rotation.y = Math.atan2(dx, dz);
+        const distXZ = Math.hypot(
+            GameState.enemy.position.x - GameState.player.position.x,
+            GameState.enemy.position.z - GameState.player.position.z
+        );
+        updateDangerEffects(distXZ);
+        return;
+    } else {
+        GameState.enemy.rotation.z = 0;
+    }
+
+    // 目标选择：诱饵 > 视野追踪玩家 > 最后已知位置/搜寻
+    const enemyPos = GameState.enemy.position;
+    const playerPos = GameState.player.position;
+    const playerHidden = now < GameState.hiddenUntil;
+    const canSeePlayer = !playerHidden && hasLineOfSight(enemyPos, playerPos);
+
+    if (canSeePlayer) {
+        GameState.enemyLastKnownPlayerPos.copy(playerPos);
+    }
+
+    let targetPos = null;
+    let searching = false;
+
+    if (now < GameState.enemyDistractedUntil) {
+        targetPos = GameState.enemyDistractionPos;
+        const d = Math.hypot(enemyPos.x - targetPos.x, enemyPos.z - targetPos.z);
+        if (d < 1.3) {
+            GameState.enemyDistractedUntil = 0;
+            clearEnemyDistraction();
+        }
+    } else {
+        // 有几率追小白（更混乱、更刺激）
+        if (canSeePlayer && GameState.shiro && Math.random() < 0.012) {
+            const losToShiro = hasLineOfSight(enemyPos, GameState.shiro.position);
+            if (losToShiro) {
+                const distToShiro = enemyPos.distanceTo(GameState.shiro.position);
+                const distToPlayer = enemyPos.distanceTo(playerPos);
+                if (distToShiro < distToPlayer * 0.75) {
+                    targetPos = GameState.shiro.position;
+                }
+            }
+        }
+
+        if (!targetPos) {
+            targetPos = canSeePlayer ? playerPos : GameState.enemyLastKnownPlayerPos;
+        }
+
+        // 丢失视野：到达最后位置后进行搜寻
+        if (!canSeePlayer) {
+            const d = Math.hypot(enemyPos.x - targetPos.x, enemyPos.z - targetPos.z);
+            if (d < 2.5) {
+                if (now >= GameState.enemySearchUntil) {
+                    GameState.enemySearchUntil = now + 1700;
+                    const a = Math.random() * Math.PI * 2;
+                    const r = 4 + Math.random() * 5;
+                    GameState.enemySearchTarget.set(
+                        targetPos.x + Math.cos(a) * r,
+                        0,
+                        targetPos.z + Math.sin(a) * r
+                    );
+                    clampToWorldXZ(GameState.enemySearchTarget);
+                }
+            }
+            if (now < GameState.enemySearchUntil) {
+                targetPos = GameState.enemySearchTarget;
+                searching = true;
+            }
+        } else {
+            GameState.enemySearchUntil = 0;
+        }
+    }
+
+    // 追击移动（带地形/紧张度加成）
+    const toX = targetPos.x - enemyPos.x;
+    const toZ = targetPos.z - enemyPos.z;
+    const distance = Math.hypot(toX, toZ);
+
+    const distToPlayerXZ = Math.hypot(enemyPos.x - playerPos.x, enemyPos.z - playerPos.z);
+    updateDangerEffects(distToPlayerXZ);
+
+    if (distance > 0.12) {
+        const scale = GameState.frameScale ?? 1;
+        const zoneFactor = getZoneSpeedFactor(enemyPos.x, enemyPos.z, 'enemy');
+        let rage = 1;
+        if (GameState.timeLeft <= 12) rage *= 1.22;
+        if (GameState.combo >= 6) rage *= 1.12;
+        if (distToPlayerXZ < 6) rage *= 1.15;
+        if (searching) rage *= 0.9;
+        if (now < GameState.enemyDistractedUntil) rage *= 0.92;
+
+        const step = config.enemySpeed * scale * zoneFactor * rage;
+        const moveX = (toX / distance) * step;
+        const moveZ = (toZ / distance) * step;
+
+        const before = enemyPos.clone();
+        moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
+        const moved = enemyPos.distanceTo(before);
+
+        // 简单“绕障”防卡死：如果完全没动，尝试横向挪一下
+        if (moved < 0.001) {
+            const sideX = -(toZ / distance) * (step * 0.9);
+            const sideZ = (toX / distance) * (step * 0.9);
+            moveWithCollisions(GameState.enemy, sideX, sideZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
+        }
+
+        GameState.enemy.rotation.y = Math.atan2(toX, toZ);
 
         const time = GameState.clock.getElapsedTime();
         GameState.enemy.position.y = Math.abs(Math.sin(time * 10)) * 0.1;
@@ -1257,7 +2244,9 @@ function updateEnemy() {
 
     // 检查抓住玩家
     const playerDist = GameState.enemy.position.distanceTo(GameState.player.position);
-    if (playerDist < CONFIG.CATCH_DISTANCE && !GameState.isInvincible) {
+    const jumpDodge = GameState.playerBaseY > CONFIG.PHYSICS.MAX_JUMP_HEIGHT_FOR_DODGE;
+    const noCatch = GameState.isInvincible || now < GameState.noCatchUntil || now < GameState.hiddenUntil || jumpDodge;
+    if (playerDist < CONFIG.CATCH_DISTANCE && !noCatch) {
         playerCaught();
     }
 }
@@ -1267,28 +2256,34 @@ function updateShiro() {
     if (!GameState.isPlaying || GameState.isPaused || !GameState.shiro) return;
 
     const time = GameState.clock.getElapsedTime();
+    const scale = GameState.frameScale ?? 1;
 
     // 跟随玩家但保持距离
     const toPlayer = new THREE.Vector3().subVectors(GameState.player.position, GameState.shiro.position);
     const dist = toPlayer.length();
 
     if (dist > 5) {
-        toPlayer.normalize().multiplyScalar(0.1);
+        toPlayer.normalize().multiplyScalar(0.1 * scale);
         GameState.shiro.position.add(toPlayer);
     } else if (dist < 3) {
-        toPlayer.normalize().multiplyScalar(-0.05);
+        toPlayer.normalize().multiplyScalar(-0.05 * scale);
         GameState.shiro.position.add(toPlayer);
     }
 
     // 随机走动
-    GameState.shiro.position.x += Math.sin(time * 2) * 0.02;
-    GameState.shiro.position.z += Math.cos(time * 1.5) * 0.02;
+    GameState.shiro.position.x += Math.sin(time * 2) * 0.02 * scale;
+    GameState.shiro.position.z += Math.cos(time * 1.5) * 0.02 * scale;
 
     // 面向移动方向
     GameState.shiro.rotation.y = Math.atan2(toPlayer.x, toPlayer.z);
 
     // 尾巴摇晃动画
     GameState.shiro.position.y = Math.abs(Math.sin(time * 8)) * 0.05;
+
+    // 碰撞修正（避免穿模）
+    const resolved = resolveCollisionsXZ(GameState.shiro.position, CONFIG.SHIRO_RADIUS, Math.max(0, GameState.shiro.position.y));
+    GameState.shiro.position.x = resolved.x;
+    GameState.shiro.position.z = resolved.z;
 }
 
 // ============ 玩家被抓 ============
@@ -1310,7 +2305,18 @@ function playerCaught() {
 
     // 重置位置
     GameState.player.position.set(0, 0, 8);
-    GameState.enemy.position.set(-15, 0, -15);
+    GameState.playerVelY = 0;
+    GameState.playerBaseY = 0;
+    GameState.playerOnGround = true;
+    GameState.jumpBufferedUntil = 0;
+    GameState.dashUntil = 0;
+    GameState.forcedMoveUntil = 0;
+    GameState.controlLockedUntil = 0;
+    GameState.hiddenUntil = 0;
+    GameState.enemy.position.set(-12, 0, -15);
+    GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
+    // 短暂无敌保护，避免连环被抓
+    GameState.noCatchUntil = Date.now() + 1100;
 
     if (GameState.lives <= 0) {
         gameOver();
@@ -1536,11 +2542,30 @@ function startGame() {
     GameState.maxCombo = 0;
     GameState.isInvincible = false;
     GameState.speedBoost = false;
+    GameState.noCatchUntil = 0;
+    GameState.playerVelY = 0;
+    GameState.playerBaseY = 0;
+    GameState.playerOnGround = true;
+    GameState.jumpBufferedUntil = 0;
+    GameState.dashUntil = 0;
+    GameState.dashCooldownUntil = 0;
+    GameState.forcedMoveUntil = 0;
+    GameState.controlLockedUntil = 0;
+    GameState.hiddenUntil = 0;
+    GameState.enemyStunnedUntil = 0;
+    GameState.enemyDistractedUntil = 0;
+    GameState.enemySearchUntil = 0;
+    clearEnemyDistraction();
+
+    // 清空陷阱
+    GameState.traps.forEach(t => GameState.scene.remove(t.mesh));
+    GameState.traps = [];
 
     // 重置位置
     GameState.player.position.set(0, 0, 8);
-    GameState.enemy.position.set(-15, 0, -15);
+    GameState.enemy.position.set(-12, 0, -15);
     GameState.shiro.position.set(5, 0, 5);
+    GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
 
     // 重新生成饼干
     GameState.cookies.forEach(c => GameState.scene.remove(c));
@@ -1601,6 +2626,9 @@ function togglePause() {
     GameState.isPaused = !GameState.isPaused;
 
     if (GameState.isPaused) {
+        DOM.gameUI.classList.remove('danger');
+        setActionPrompt(false);
+        GameState.dangerBeepAt = 0;
         DOM.pauseScreen.classList.remove('hidden');
         DOM.pauseScore.textContent = GameState.score;
         DOM.pauseTime.textContent = Math.ceil(GameState.timeLeft);
@@ -1619,6 +2647,10 @@ function quitToMenu() {
     GameState.isPaused = false;
     clearInterval(GameState.timerInterval);
 
+    DOM.gameUI.classList.remove('danger');
+    setActionPrompt(false);
+    GameState.dangerBeepAt = 0;
+
     DOM.pauseScreen.classList.add('hidden');
     DOM.gameUI.classList.add('hidden');
     DOM.mobileControls.classList.add('hidden');
@@ -1630,6 +2662,10 @@ function gameOver() {
     clearInterval(GameState.timerInterval);
 
     AudioManager.playGameOver();
+    DOM.gameUI.classList.remove('danger');
+    setActionPrompt(false);
+    GameState.dangerBeepAt = 0;
+    clearEnemyDistraction();
 
     // 检查新纪录
     const isNewRecord = GameState.score > GameState.highScore;
@@ -1687,6 +2723,11 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
+    // 固定在“以 60fps 为基准”的时间缩放，避免不同设备速度差异
+    const delta = GameState.clock ? GameState.clock.getDelta() : 1 / CONFIG.PHYSICS.FIXED_FPS;
+    GameState.delta = delta;
+    GameState.frameScale = getFrameScale(delta);
+
     if (GameState.isPlaying && !GameState.isPaused) {
         updatePlayer();
         updateEnemy();
@@ -1712,6 +2753,27 @@ function bindEvents() {
     });
     DOM.pauseBtn.addEventListener('click', togglePause);
     DOM.mobilePauseBtn?.addEventListener('click', togglePause);
+
+    // 移动端动作按钮
+    const bindMobileAction = (btn, action) => {
+        if (!btn) return;
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            action();
+        }, { passive: false });
+        btn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            action();
+        });
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            action();
+        });
+    };
+
+    bindMobileAction(DOM.mobileJumpBtn, requestJump);
+    bindMobileAction(DOM.mobileDashBtn, requestDash);
+    bindMobileAction(DOM.mobileInteractBtn, attemptInteract);
     DOM.resumeBtn.addEventListener('click', resumeGame);
     DOM.restartFromPauseBtn.addEventListener('click', () => {
         DOM.pauseScreen.classList.add('hidden');

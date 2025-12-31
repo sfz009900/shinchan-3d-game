@@ -92,6 +92,30 @@
                     </div>
                 </div>
                 <div class="instruction-item">
+                    <div class="instruction-icon">🦘</div>
+                    <div class="instruction-text">
+                        <h3>跳跃 / 冲刺</h3>
+                        <p>空格：跳跃（可躲开妈妈的抓）</p>
+                        <p>Shift：冲刺（短暂无敌，带冷却）</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🤚</div>
+                    <div class="instruction-text">
+                        <h3>场景互动</h3>
+                        <p>E / 🤚：与滑梯、秋千、沙坑、建筑互动</p>
+                        <p>挖宝有风险！也可能挖到诱饵/香蕉皮</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🌿</div>
+                    <div class="instruction-text">
+                        <h3>地形与障碍</h3>
+                        <p>灌木会挡路：跳起来可越过</p>
+                        <p>沙坑会减速：被追时要小心！</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
                     <div class="instruction-icon">🍪</div>
                     <div class="instruction-text">
                         <h3>收集饼干</h3>
@@ -160,6 +184,11 @@
         </div>
 
         <div class="powerup-indicator" id="powerup-indicator"></div>
+
+        <div class="action-prompt hidden" id="action-prompt">
+            <span class="prompt-key" id="action-prompt-key">E</span>
+            <span class="prompt-text" id="action-prompt-text">互动</span>
+        </div>
 
         <div class="bottom-info">
             <div class="highscore-display">
@@ -251,7 +280,12 @@
                 <div id="joystick-stick"></div>
             </div>
         </div>
-        <button id="mobile-pause-btn" class="mobile-btn">⏸️</button>
+        <div id="mobile-action-buttons">
+            <button id="mobile-interact-btn" class="mobile-btn" title="互动" aria-label="互动">🤚</button>
+            <button id="mobile-dash-btn" class="mobile-btn" title="冲刺" aria-label="冲刺">⚡</button>
+            <button id="mobile-jump-btn" class="mobile-btn" title="跳跃" aria-label="跳跃">⤴️</button>
+            <button id="mobile-pause-btn" class="mobile-btn" title="暂停" aria-label="暂停">⏸️</button>
+        </div>
     </div>
 
     <!-- Three.js 游戏容器 -->

@@ -659,6 +659,62 @@ body {
     color: var(--primary-color);
 }
 
+/* ============ 互动提示 ============ */
+.action-prompt {
+    position: absolute;
+    left: 50%;
+    bottom: 95px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-radius: 30px;
+    color: #fff;
+    z-index: 55;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+}
+
+.action-prompt.disabled {
+    opacity: 0.65;
+}
+
+.prompt-key {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    font-weight: 900;
+}
+
+.prompt-text {
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+/* ============ 紧张提示（妈妈接近） ============ */
+#game-ui.danger .ui-panel {
+    border-color: var(--danger-color);
+    box-shadow: 0 0 22px rgba(255, 68, 68, 0.55);
+}
+
+#game-ui.danger .top-bar {
+    animation: dangerPulse 0.45s ease-in-out infinite;
+}
+
+@keyframes dangerPulse {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(255,68,68,0)); }
+    50% { filter: drop-shadow(0 0 12px rgba(255,68,68,0.65)); }
+}
+
 /* ============ 底部信息 ============ */
 .bottom-info {
     position: absolute;
@@ -967,18 +1023,30 @@ body {
     transition: transform 0.1s ease;
 }
 
-.mobile-btn {
+#mobile-action-buttons {
     position: absolute;
     right: 30px;
     bottom: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: auto;
+}
+
+.mobile-btn {
     width: 60px;
     height: 60px;
     border-radius: 50%;
     border: 3px solid var(--secondary-color);
     background: var(--panel-bg);
     font-size: 28px;
-    pointer-events: auto;
     box-shadow: 0 4px 15px var(--shadow-color);
+    cursor: pointer;
+    transition: transform var(--transition-fast);
+}
+
+.mobile-btn:active {
+    transform: scale(0.95);
 }
 
 /* ============ 音效按钮 ============ */
