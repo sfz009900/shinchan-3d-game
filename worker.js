@@ -4,7 +4,7 @@
  * 只处理 /shinchan-3d-game/* 路径，代理到 Cloudflare Pages
  *
  * Cloudflare Dashboard 配置：
- * Workers Routes → 添加路由：gambanpo.net/shinchan-3d-game/*
+ * Workers Routes → 添加路由：ppt250.shop/shinchan-3d-game/*
  */
 
 const PAGES_URL = 'https://shinchan-3d-game.pages.dev';
