@@ -15,14 +15,19 @@ export default {
     const url = new URL(request.url);
     let targetPath = url.pathname;
 
-    // 移除 /shinchan-3d-game 前缀
+    // 移除 /shinchan-3d-game 前缀（如果有）
     if (targetPath.startsWith(BASE_PATH)) {
       targetPath = targetPath.slice(BASE_PATH.length) || '/';
     }
 
-    // 目录请求默认返回 index.html
+    // 根路径和目录请求默认返回 index.html
     if (targetPath === '/' || targetPath === '') {
       targetPath = '/index.html';
+    }
+
+    // favicon.ico 请求
+    if (targetPath === '/favicon.ico') {
+      targetPath = '/favicon.ico';
     }
 
     // 代理到 Cloudflare Pages
