@@ -116,7 +116,11 @@ function createShinnosuke() {
     rightLeg.position.set(0.18, 0.05, 0);
     character.add(rightLeg);
 
-    character.position.set(0, 0, 8);
+    if (GameState.mapLayout && GameState.mapLayout.spawn) {
+        character.position.set(GameState.mapLayout.spawn.x, 0, GameState.mapLayout.spawn.z);
+    } else {
+        character.position.set(0, 0, 8);
+    }
     return character;
 }
 
@@ -217,7 +221,11 @@ function createMisae() {
     character.add(rightLeg);
 
     // 避免出生点卡进房子碰撞体
-    character.position.set(-12, 0, -15);
+    if (GameState.mapLayout && GameState.mapLayout.enemySpawn) {
+        character.position.set(GameState.mapLayout.enemySpawn.x, 0, GameState.mapLayout.enemySpawn.z);
+    } else {
+        character.position.set(-12, 0, -15);
+    }
     return character;
 }
 
@@ -291,7 +299,11 @@ function createShiro() {
         dog.add(leg);
     });
 
-    dog.position.set(5, 0, 5);
+    if (GameState.mapLayout && GameState.mapLayout.shiroSpawn) {
+        dog.position.set(GameState.mapLayout.shiroSpawn.x, 0, GameState.mapLayout.shiroSpawn.z);
+    } else {
+        dog.position.set(5, 0, 5);
+    }
     return dog;
 }
 
@@ -391,13 +403,7 @@ function createPowerups() {
 
     types.forEach((config, i) => {
         const powerup = createPowerup(config);
-        const angle = (i / types.length) * Math.PI * 2;
-        const radius = 12;
-        powerup.position.set(
-            Math.cos(angle) * radius,
-            1,
-            Math.sin(angle) * radius
-        );
+        spawnAtRandomPosition(powerup, { radius: 1.0 });
         GameState.scene.add(powerup);
         GameState.powerups.push(powerup);
     });

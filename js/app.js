@@ -47,10 +47,24 @@ function startGame() {
     GameState.traps.forEach(t => GameState.scene.remove(t.mesh));
     GameState.traps = [];
 
-    // 重置位置
-    GameState.player.position.set(0, 0, 8);
-    GameState.enemy.position.set(-12, 0, -15);
-    GameState.shiro.position.set(5, 0, 5);
+    // 清空旧世界并重新生成
+    if (GameState.worldGroup) {
+        GameState.worldGroup.clear(); // 清除所有环境物体
+    }
+    createWorld(); // 重新生成布局和物体
+
+    // 重置位置 (使用新生成的布局)
+    if (GameState.mapLayout) {
+        if (GameState.mapLayout.spawn) GameState.player.position.set(GameState.mapLayout.spawn.x, 0, GameState.mapLayout.spawn.z);
+        if (GameState.mapLayout.enemySpawn) GameState.enemy.position.set(GameState.mapLayout.enemySpawn.x, 0, GameState.mapLayout.enemySpawn.z);
+        if (GameState.mapLayout.shiroSpawn) GameState.shiro.position.set(GameState.mapLayout.shiroSpawn.x, 0, GameState.mapLayout.shiroSpawn.z);
+    } else {
+        // Fallback
+        GameState.player.position.set(0, 0, 8);
+        GameState.enemy.position.set(-12, 0, -15);
+        GameState.shiro.position.set(5, 0, 5);
+    }
+
     GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
 
     // 重新生成饼干
@@ -58,11 +72,11 @@ function startGame() {
     GameState.cookies = [];
     createCookies();
 
-    // 重置道具
-    GameState.powerups.forEach(p => {
-        p.userData.collected = false;
-        p.visible = true;
-    });
+    // 重新生成道具
+    GameState.powerups.forEach(p => GameState.scene.remove(p));
+    // createPowerups clears the array, so we don't need to manually clear it if we trust it, but being safe:
+    GameState.powerups = [];
+    createPowerups();
 
     // 更新UI
     updateScoreDisplay();

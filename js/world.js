@@ -22,6 +22,8 @@ async function loadGame() {
 // ============ 初始化 Three.js ============
 function initThreeJS() {
     GameState.scene = new THREE.Scene();
+    GameState.worldGroup = new THREE.Group();
+    GameState.scene.add(GameState.worldGroup);
 
     // 渐变天空
     const skyColor = new THREE.Color(0x87CEEB);
@@ -89,9 +91,134 @@ function addLights() {
     GameState.scene.add(hemiLight);
 }
 
+// ============ 地图布局生成 ============
+function generateMapLayout() {
+    console.log("Generating New Map Layout...");
+
+    // 如果已经有有效布局且不是重新开始，可能不需要重新生成？
+    // 但为了每次游戏都不同，我们强制生成。
+
+    const layout = {
+        house: { x: -18, z: -18 },
+        kindergarten: { x: 18, z: -18 },
+        slide: { x: 10, z: 10 },
+        swing: { x: -10, z: 10 },
+        sandbox: { x: 0, z: 0 },
+        spawn: { x: 0, z: 8 },
+        enemySpawn: { x: -12, z: -15 },
+        shiroSpawn: { x: 5, z: 5 }
+    };
+
+    // 简单的随机尝试算法
+    const items = [
+        { key: 'house', r: 7 },
+        { key: 'kindergarten', r: 9 },
+        { key: 'slide', r: 5 },
+        { key: 'swing', r: 5 },
+        { key: 'sandbox', r: 5 }
+    ];
+
+    const placedItems = [];
+    const size = CONFIG.WORLD_SIZE - 4; // 留边距
+
+    // 1. 放置主要建筑/设施
+    for (const item of items) {
+        let placed = false;
+        for (let i = 0; i < 50; i++) {
+            const x = (Math.random() - 0.5) * 2 * size;
+            const z = (Math.random() - 0.5) * 2 * size;
+
+            // 检查与其他项的距离
+            let valid = true;
+            for (const other of placedItems) {
+                const dist = Math.hypot(x - other.x, z - other.z);
+                if (dist < (item.r + other.r + 2)) {
+                    valid = false;
+                    break;
+                }
+            }
+
+            // 避免放在正中心 (留给玩家出生?)
+            if (Math.hypot(x, z) < 6) valid = false;
+
+            if (valid) {
+                layout[item.key] = { x, z };
+                placedItems.push({ x, z, r: item.r, key: item.key });
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) console.warn("Could not place item randomly:", item.key);
+    }
+
+    // 2. 放置出生点 (Player Spawn)
+    // 找一个离所有障碍物有一定距离的点，且尽量在中心区域附近
+    for (let i = 0; i < 50; i++) {
+        const x = (Math.random() - 0.5) * 10;
+        const z = (Math.random() - 0.5) * 10;
+        let valid = true;
+        for (const other of placedItems) {
+            if (Math.hypot(x - other.x, z - other.z) < (other.r + 3)) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            layout.spawn = { x, z };
+            break;
+        }
+    }
+
+    // 3. 放置敌人出生点 (Enemy Spawn)
+    // 离玩家远一点
+    for (let i = 0; i < 50; i++) {
+        const x = (Math.random() - 0.5) * 2 * size;
+        const z = (Math.random() - 0.5) * 2 * size;
+        const distToPlayer = Math.hypot(x - layout.spawn.x, z - layout.spawn.z);
+
+        let valid = distToPlayer > 15; // 至少15米远
+        if (valid) {
+            for (const other of placedItems) {
+                if (Math.hypot(x - other.x, z - other.z) < (other.r + 2)) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
+        if (valid) {
+            layout.enemySpawn = { x, z };
+            break;
+        }
+    }
+
+    // 4. 放置小白出生点
+    for (let i = 0; i < 50; i++) {
+        const x = (Math.random() - 0.5) * 15;
+        const z = (Math.random() - 0.5) * 15;
+        let valid = true;
+        for (const other of placedItems) {
+            if (Math.hypot(x - other.x, z - other.z) < (other.r + 2)) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            layout.shiroSpawn = { x, z };
+            break;
+        }
+    }
+
+    GameState.mapLayout = layout;
+    return layout;
+}
+
 // ============ 创建游戏世界 ============
 function createWorld() {
     resetWorldSystems();
+
+    // 生成地图布局
+    const layout = generateMapLayout();
 
     // 地面
     const groundGeometry = new THREE.PlaneGeometry(CONFIG.WORLD_SIZE * 2.5, CONFIG.WORLD_SIZE * 2.5, 50, 50);
@@ -124,7 +251,7 @@ function createWorld() {
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
-    GameState.scene.add(ground);
+    GameState.worldGroup.add(ground);
 
     // 装饰草丛
     for (let i = 0; i < 150; i++) {
@@ -134,14 +261,14 @@ function createWorld() {
             0,
             (Math.random() - 0.5) * CONFIG.WORLD_SIZE * 2
         );
-        GameState.scene.add(grass);
+        GameState.worldGroup.add(grass);
     }
 
     // 野原家
     const noharaHouse = createHouse(0xFF6B35, true);
-    noharaHouse.position.set(-18, 0, -18);
-    noharaHouse.rotation.y = Math.PI / 4;
-    GameState.scene.add(noharaHouse);
+    noharaHouse.position.set(layout.house.x, 0, layout.house.z);
+    noharaHouse.rotation.y = Math.random() * Math.PI * 2; // 随机朝向
+    GameState.worldGroup.add(noharaHouse);
     addCircleCollider({ x: noharaHouse.position.x, z: noharaHouse.position.z, radius: 4.9, height: 3.2, blocksLOS: true, blocksMovement: true, tag: 'house' });
     addInteractable({
         type: 'hide_house',
@@ -169,9 +296,9 @@ function createWorld() {
 
     // 幼稚园
     const kindergarten = createKindergarten();
-    kindergarten.position.set(18, 0, -18);
-    kindergarten.rotation.y = -Math.PI / 4;
-    GameState.scene.add(kindergarten);
+    kindergarten.position.set(layout.kindergarten.x, 0, layout.kindergarten.z);
+    kindergarten.rotation.y = Math.random() * Math.PI * 2;
+    GameState.worldGroup.add(kindergarten);
     addCircleCollider({ x: kindergarten.position.x, z: kindergarten.position.z, radius: 6.8, height: 3.5, blocksLOS: true, blocksMovement: true, tag: 'kindergarten' });
     addInteractable({
         type: 'hide_kindergarten',
@@ -198,7 +325,7 @@ function createWorld() {
     });
 
     // 公园设施
-    createParkFeatures();
+    createParkFeatures(layout);
 
     // 树木
     for (let i = 0; i < 12; i++) {
@@ -211,7 +338,7 @@ function createWorld() {
             Math.sin(angle) * radius
         );
         tree.rotation.y = Math.random() * Math.PI * 2;
-        GameState.scene.add(tree);
+        GameState.worldGroup.add(tree);
         addCircleCollider({ x: tree.position.x, z: tree.position.z, radius: 1.0, height: 2.6, blocksLOS: true, blocksMovement: true, tag: 'tree' });
     }
 
@@ -229,7 +356,7 @@ function createWorld() {
             15 + Math.random() * 10,
             (Math.random() - 0.5) * 60
         );
-        GameState.scene.add(cloud);
+        GameState.worldGroup.add(cloud);
     }
 }
 
@@ -377,7 +504,9 @@ function createKindergarten() {
 }
 
 // ============ 创建公园设施 ============
-function createParkFeatures() {
+function createParkFeatures(layout) {
+    if (!layout) layout = { slide: { x: 10, z: 10 }, swing: { x: -10, z: 10 }, sandbox: { x: 0, z: 0 } };
+
     // 滑梯
     const slide = new THREE.Group();
 
@@ -394,8 +523,9 @@ function createParkFeatures() {
     slideBoard.rotation.x = 0.4;
     slide.add(slideBoard);
 
-    slide.position.set(10, 0, 10);
-    GameState.scene.add(slide);
+    slide.position.set(layout.slide.x, 0, layout.slide.z);
+    slide.rotation.y = Math.random() * Math.PI * 2;
+    GameState.worldGroup.add(slide);
     addCircleCollider({ x: slide.position.x, z: slide.position.z, radius: 2.2, height: 1.6, blocksLOS: false, blocksMovement: true, tag: 'slide' });
     addInteractable({
         type: 'slide_boost',
@@ -452,8 +582,9 @@ function createParkFeatures() {
     seat.position.set(0, 1, 0);
     swing.add(seat);
 
-    swing.position.set(-10, 0, 10);
-    GameState.scene.add(swing);
+    swing.position.set(layout.swing.x, 0, layout.swing.z);
+    swing.rotation.y = Math.random() * Math.PI * 2;
+    GameState.worldGroup.add(swing);
     addCircleCollider({ x: swing.position.x, z: swing.position.z, radius: 2.4, height: 2.2, blocksLOS: false, blocksMovement: true, tag: 'swing' });
     addInteractable({
         type: 'swing_launch',
@@ -494,9 +625,9 @@ function createParkFeatures() {
     const sandboxGeometry = new THREE.CylinderGeometry(3, 3, 0.3, 6);
     const sandboxMaterial = new THREE.MeshStandardMaterial({ color: 0xF4D03F });
     const sandbox = new THREE.Mesh(sandboxGeometry, sandboxMaterial);
-    sandbox.position.set(0, 0.15, 0);
+    sandbox.position.set(layout.sandbox.x, 0.15, layout.sandbox.z); // use y=0.15 check
     sandbox.receiveShadow = true;
-    GameState.scene.add(sandbox);
+    GameState.worldGroup.add(sandbox);
 
     // 沙坑区域：踩进去会变慢（更刺激）
     GameState.zones.push({
@@ -640,8 +771,14 @@ function createBushObstacles() {
             const x = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
             const z = (Math.random() - 0.5) * (CONFIG.WORLD_SIZE - margin) * 2;
 
-            // 给沙坑留出活动空间
-            if (Math.abs(x) < 4.2 && Math.abs(z) < 4.2) continue;
+            // 检查是否在安全区 (出生点周围)
+            if (GameState.mapLayout) {
+                const distToSpawn = Math.hypot(x - GameState.mapLayout.spawn.x, z - GameState.mapLayout.spawn.z);
+                if (distToSpawn < 6) continue;
+            } else if (Math.abs(x) < 4.2 && Math.abs(z) < 4.2) {
+                // Fallback
+                continue;
+            }
 
             // 用“半对角 + 余量”做快速避障判断
             const r = Math.sqrt((width * 0.5) ** 2 + (depth * 0.5) ** 2) + 0.9;
@@ -650,7 +787,7 @@ function createBushObstacles() {
             const bush = createBush(width, depth, height);
             bush.position.set(x, 0, z);
             bush.rotation.y = Math.random() * Math.PI * 2;
-            GameState.scene.add(bush);
+            GameState.worldGroup.add(bush);
 
             addBoxCollider({
                 minX: x - width / 2,
@@ -682,7 +819,7 @@ function createFence() {
             const post = new THREE.Mesh(postGeometry, fenceMaterial);
             post.position.set(x, 0.9, z);
             post.castShadow = true;
-            GameState.scene.add(post);
+            GameState.worldGroup.add(post);
         });
     }
 }

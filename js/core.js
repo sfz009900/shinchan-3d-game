@@ -144,6 +144,8 @@ const GameState = {
     enemyPhaseCooldownUntil: 0,
     enemyStuckSince: 0,
     enemyWasPhasing: false,
+    mapLayout: null, // 新增：保存地图布局信息
+    worldGroup: null, // 新增：世界对象组（便于重置）
     // Enemy Skills State
     enemyState: 'CHASE', // CHASE, ROLLING, SHOUT, STUNNED
     enemySkillTimer: 0,
