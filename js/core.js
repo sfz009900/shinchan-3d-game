@@ -7,93 +7,93 @@
 // ============ 游戏配置 ============
 const CONFIG = {
     DIFFICULTY: {
-        easy: { enemySpeed: 0.09, gameTime: 90, cookieCount: 18, enemyRageMultiplier: 1.0 },
-        normal: { enemySpeed: 0.12, gameTime: 60, cookieCount: 15, enemyRageMultiplier: 1.15 },
-        hard: { enemySpeed: 0.16, gameTime: 45, cookieCount: 12, enemyRageMultiplier: 1.35 },
-        nightmare: { enemySpeed: 0.20, gameTime: 30, cookieCount: 10, enemyRageMultiplier: 1.6 }
+        easy: { enemySpeed: 0.11, gameTime: 99999, cookieCount: 20, enemyRageMultiplier: 1.05 },
+        normal: { enemySpeed: 0.14, gameTime: 99999, cookieCount: 15, enemyRageMultiplier: 1.25 },
+        hard: { enemySpeed: 0.18, gameTime: 99999, cookieCount: 12, enemyRageMultiplier: 1.5 },
+        nightmare: { enemySpeed: 0.24, gameTime: 99999, cookieCount: 10, enemyRageMultiplier: 2.0 }
     },
-    PLAYER_SPEED: 0.22,              // 提速：更快节奏
+    PLAYER_SPEED: 0.28,              // Addictive speed
     PLAYER_RADIUS: 0.75,
     ENEMY_RADIUS: 0.85,
     SHIRO_RADIUS: 0.55,
-    INITIAL_LIVES: 3,
+    INITIAL_LIVES: 1,                // High Stakes!
     WORLD_SIZE: 32,
-    CATCH_DISTANCE: 1.6,             // 略微增加抓取距离，增加压迫感
-    POWERUP_DURATION: 4000,          // 缩短道具时间，增加紧张感
-    COMBO_TIMEOUT: 1500,             // 缩短连击窗口，更考验操作
+    CATCH_DISTANCE: 1.5,
+    POWERUP_DURATION: 3500,
+    COMBO_TIMEOUT: 1200,
     PHYSICS: {
         FIXED_FPS: 60,
         MAX_FRAME_SCALE: 2.5,
-        GRAVITY: 65,                 // 极高重力：像Flappy Bird一样快速下坠
-        JUMP_VELOCITY: 17.0,         // 强力跳跃：瞬间起飞
-        MAX_JUMP_HEIGHT_FOR_DODGE: 0.7,
-        ACCELERATION: 0.4,           // 极速起步：没有任何拖泥带水
-        FRICTION: 0.3,               // 快速刹车：精准控制
-        TURN_SPEED: 0.5              // 灵敏转向
+        GRAVITY: 80,
+        JUMP_VELOCITY: 20.0,
+        MAX_JUMP_HEIGHT_FOR_DODGE: 0.8,
+        ACCELERATION: 0.6,
+        FRICTION: 0.45,
+        TURN_SPEED: 0.7
     },
     CAMERA: {
-        SMOOTHNESS: 0.12,            // 紧密跟随，减少漂移感
-        LOOK_SMOOTHNESS: 0.15,       // 视角锁定更准
-        OFFSET_X_RATIO: 0.6,
-        OFFSET_Z: 16                 //稍微拉近一点，更有代入感
+        SMOOTHNESS: 0.15,
+        LOOK_SMOOTHNESS: 0.2,
+        OFFSET_X_RATIO: 0.5,
+        OFFSET_Z: 13
     },
     DASH: {
-        DURATION: 180,               // 短促有力
-        COOLDOWN: 600,               // 极短冷却，鼓励频繁使用
-        SPEED_MULTIPLIER: 3.0        // 爆发速度
+        DURATION: 150,
+        COOLDOWN: 400,
+        SPEED_MULTIPLIER: 3.5
     },
     ENEMY_PHASE: {
-        DURATION: 1300,              // 延长穿墙时间，更危险
-        COOLDOWN: 4500,              // 缩短冷却，更频繁穿墙
-        SPEED_MULTIPLIER: 1.35,      // 穿墙时更快
-        STUCK_TRIGGER_MS: 350,       // 更快触发穿墙
-        TRIGGER_DISTANCE: 15,        // 更远距离就会穿墙
-        CHANCE_PER_SECOND: 0.35      // 提高突然穿墙概率
+        DURATION: 1500,
+        COOLDOWN: 3500,
+        SPEED_MULTIPLIER: 1.4,
+        STUCK_TRIGGER_MS: 300,
+        TRIGGER_DISTANCE: 18,
+        CHANCE_PER_SECOND: 0.6
     },
     SHIRO_TRIP: {
-        STUN_MS: 400,                // 缩短眩晕时间
-        COOLDOWN: 1200,              // 缩短冷却
-        TRIGGER_DISTANCE: 1.18,
-        AVOID_JUMP_HEIGHT: 0.25,
-        NO_CATCH_GRACE_MS: 550
+        STUN_MS: 250,
+        COOLDOWN: 800,
+        TRIGGER_DISTANCE: 1.2,
+        AVOID_JUMP_HEIGHT: 0.3,
+        NO_CATCH_GRACE_MS: 400
     },
     PANIC_BONUS: {
-        DISTANCE: 6.5,               // 扩大紧张区域
-        MULTIPLIER: 1.35             // 提高紧张加成
+        DISTANCE: 8.0,
+        MULTIPLIER: 1.8
     },
     INTERACT: {
-        RANGE: 3.2
+        RANGE: 3.5
     },
     DIFFICULTY_SCALING: {
         ENABLED: true,
-        SPEED_INCREASE_PER_10S: 0.015,    // 每10秒增加速度
-        MAX_SPEED_MULTIPLIER: 1.8,        // 最大速度倍数
-        RAGE_INCREASE_PER_COOKIE: 0.02    // 每收集一个饼干增加愤怒值
+        SPEED_INCREASE_PER_10S: 0.025,
+        MAX_SPEED_MULTIPLIER: 3.0,
+        RAGE_INCREASE_PER_COOKIE: 0.05
     },
     ENEMY_SKILLS: {
         ROLLING: {
-            TRIGGER_DIST_MIN: 8,
+            TRIGGER_DIST_MIN: 6,
             DURATION: 2500,
-            COOLDOWN: 8000,
-            SPEED_MULT: 2.2, // Faster roll
-            CHANCE: 0.7
+            COOLDOWN: 6000,
+            SPEED_MULT: 2.5,
+            CHANCE: 0.85
         },
         SHOUT: {
-            TRIGGER_DIST_MAX: 6.0,
-            DURATION: 1500,
-            STUN_DURATION: 1800,
-            COOLDOWN: 12000,
-            CHANCE: 0.5
+            TRIGGER_DIST_MAX: 7.0,
+            DURATION: 1200,
+            STUN_DURATION: 1200,
+            COOLDOWN: 8000,
+            CHANCE: 0.7
         },
-        GENKOTSU: { // New Skill: Iron Fist Drop
+        GENKOTSU: {
             TRIGGER_DIST_MIN: 0,
-            TRIGGER_DIST_MAX: 20,
-            JUMP_DURATION: 1000,
-            DROP_SPEED: 25,
-            IMPACT_RADIUS: 2.5,
-            STUN_DURATION: 2500,
-            COOLDOWN: 15000,
-            CHANCE: 0.4
+            TRIGGER_DIST_MAX: 22,
+            JUMP_DURATION: 800,
+            DROP_SPEED: 35,
+            IMPACT_RADIUS: 3.0,
+            STUN_DURATION: 1500,
+            COOLDOWN: 10000,
+            CHANCE: 0.6
         }
     }
 };

@@ -6,7 +6,7 @@ function startGame() {
     GameState.isPaused = false;
     GameState.score = 0;
     GameState.lives = CONFIG.INITIAL_LIVES;
-    GameState.timeLeft = config.gameTime;
+    GameState.timeLeft = 0; // Endless Mode: Time Survived
     GameState.combo = 0;
     GameState.maxCombo = 0;
     GameState.isInvincible = false;
@@ -111,11 +111,13 @@ function startGameTimer() {
 
     GameState.timerInterval = setInterval(() => {
         if (GameState.isPlaying && !GameState.isPaused) {
-            GameState.timeLeft -= 1;
+            GameState.timeLeft += 1;
             updateTimeDisplay();
 
-            if (GameState.timeLeft <= 0) {
-                gameOver();
+            // Add score for survival every second
+            if (GameState.timeLeft % 1 === 0) { // Every second
+                GameState.score += 5;
+                updateScoreDisplay();
             }
         }
     }, 1000);

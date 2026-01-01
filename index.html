@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -8,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <!-- 加载界面 -->
     <div id="loading-screen" class="screen">
@@ -154,8 +156,8 @@
                     <div class="instruction-icon">🏆</div>
                     <div class="instruction-text">
                         <h3>目标</h3>
-                        <p>在时间内收集尽可能多的饼干</p>
-                        <p>挑战高分记录! 完美躲避和高连击有额外奖励!</p>
+                        <p>尽可能存活更长时间并收集饼干</p>
+                        <p>挑战无限连击! 完美躲避和高连击有额外奖励!</p>
                     </div>
                 </div>
             </div>
@@ -213,7 +215,7 @@
             <h2>⏸️ 游戏暂停</h2>
             <div class="pause-stats">
                 <p>当前得分: <span id="pause-score">0</span> 🍪</p>
-                <p>剩余时间: <span id="pause-time">60</span> 秒</p>
+                <p>坚持时间: <span id="pause-time">60</span> 秒</p>
             </div>
             <div class="pause-buttons">
                 <button id="resume-btn" class="game-btn primary-btn">继续游戏</button>
@@ -275,7 +277,7 @@
             <div class="game-over-buttons">
                 <button id="restart-btn" class="game-btn primary-btn">
                     <span class="btn-icon">🔄</span>
-                    再玩一次
+                    再玩一次 (R / Space)
                 </button>
                 <button id="back-to-menu-btn" class="game-btn secondary-btn">
                     <span class="btn-icon">🏠</span>
@@ -331,4 +333,5 @@
     <script src="js/app.js"></script>
     <script src="game.js"></script>
 </body>
+
 </html>

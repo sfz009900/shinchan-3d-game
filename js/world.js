@@ -624,6 +624,54 @@ function createWorld() {
         );
         GameState.worldGroup.add(cloud);
     }
+
+    // ============ 新增：弹跳板与加速带 ============
+    // 弹跳板 (Jump Pads)
+    for (let i = 0; i < 6; i++) {
+        const jumpPad = createJumpPad();
+        let valid = false;
+        let x, z;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            x = (Math.random() - 0.5) * CONFIG.WORLD_SIZE * 1.8;
+            z = (Math.random() - 0.5) * CONFIG.WORLD_SIZE * 1.8;
+            // 简单检查不重叠
+            if (Math.hypot(x, z) > 5) { valid = true; break; }
+        }
+        if (valid) {
+            jumpPad.position.set(x, 0.05, z);
+            GameState.worldGroup.add(jumpPad);
+            GameState.interactables.push({
+                type: 'jump_pad',
+                mesh: jumpPad,
+                radius: 1.5
+            });
+            // Sky Coins above jump pad
+            createSkyCoins(x, z);
+        }
+    }
+
+    // 加速带 (Speed Boosts)
+    for (let i = 0; i < 8; i++) {
+        const speedPad = createSpeedPad();
+        let valid = false;
+        let x, z;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            x = (Math.random() - 0.5) * CONFIG.WORLD_SIZE * 1.8;
+            z = (Math.random() - 0.5) * CONFIG.WORLD_SIZE * 1.8;
+            if (Math.hypot(x, z) > 5) { valid = true; break; }
+        }
+        if (valid) {
+            speedPad.position.set(x, 0.02, z);
+            speedPad.rotation.y = Math.random() * Math.PI * 2; // Random direction
+            GameState.worldGroup.add(speedPad);
+            GameState.interactables.push({
+                type: 'speed_pad',
+                mesh: speedPad,
+                radius: 1.5,
+                direction: new THREE.Vector3(Math.sin(speedPad.rotation.y), 0, Math.cos(speedPad.rotation.y))
+            });
+        }
+    }
 }
 
 // ============ 创建草丛 ============
@@ -1389,3 +1437,107 @@ function createCloud() {
     return cloud;
 }
 
+// ============ 弹跳板与加速带模型 ============
+
+function createJumpPad() {
+    const group = new THREE.Group();
+
+    // Base
+    const baseGeo = new THREE.CylinderGeometry(1.2, 1.4, 0.2, 16);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    group.add(base);
+
+    // Pad
+    const padGeo = new THREE.CylinderGeometry(1.0, 1.0, 0.1, 16);
+    const padMat = new THREE.MeshStandardMaterial({ color: 0xFF4500, emissive: 0x331100 });
+    const pad = new THREE.Mesh(padGeo, padMat);
+    pad.position.y = 0.15;
+    group.add(pad);
+
+    // Rings
+    const ringGeo = new THREE.TorusGeometry(0.6, 0.05, 8, 16);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.21;
+    group.add(ring);
+
+    // Initial Animation Data
+    group.userData = { isJumpPad: true, originScaleY: 1 };
+
+    return group;
+}
+
+function createSpeedPad() {
+    const group = new THREE.Group();
+
+    // Base Plate
+    const plateGeo = new THREE.BoxGeometry(2.0, 0.1, 3.0);
+    const plateMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const plate = new THREE.Mesh(plateGeo, plateMat);
+    group.add(plate);
+
+    // Arrows (Animated texture effect manually via geometry?)
+    // Let's use simple glowing chevrons
+    const arrowGeo = new THREE.PlaneGeometry(1.2, 1.2);
+    // Draw arrow on canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000000'; // Transparent bg ideally, but simple black for contrasting
+    ctx.fillRect(0, 0, 128, 128); // Actually let's make it emissive
+    ctx.fillStyle = '#00FFFF';
+    ctx.beginPath();
+    ctx.moveTo(64, 20);
+    ctx.lineTo(110, 80);
+    ctx.lineTo(90, 80);
+    ctx.lineTo(64, 50);
+    ctx.lineTo(38, 80);
+    ctx.lineTo(18, 80);
+    ctx.closePath();
+    ctx.fill();
+
+    // Second arrow below
+    ctx.beginPath();
+    ctx.moveTo(64, 60);
+    ctx.lineTo(110, 120);
+    ctx.lineTo(90, 120);
+    ctx.lineTo(64, 90);
+    ctx.lineTo(38, 120);
+    ctx.lineTo(18, 120);
+    ctx.closePath();
+    ctx.fill();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const arrowMat = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending
+    });
+
+    const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+    arrowMesh.rotation.x = -Math.PI / 2;
+    arrowMesh.position.y = 0.06;
+    group.add(arrowMesh);
+
+    group.userData = { isSpeedPad: true };
+    return group;
+}
+
+function createSkyCoins(x, z) {
+    // Column of coins
+    for (let h = 4; h <= 12; h += 2) {
+        const coin = createCookie(); // Reuse existing
+        // Change type/color for sky coins?
+        coin.userData.points = 50; // High value
+        coin.children.forEach(c => {
+            if (c.material) c.material.color.setHex(0x00BFFF); // Blue Sky Coins
+        });
+        coin.position.set(x, h, z);
+        GameState.scene.add(coin);
+        GameState.cookies.push(coin);
+    }
+}

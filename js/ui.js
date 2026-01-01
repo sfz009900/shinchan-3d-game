@@ -13,7 +13,7 @@ function showScreenFlash(type = 'red') {
     if (!DOM.screenFlash) return;
     DOM.screenFlash.classList.remove('hidden', 'flash-red', 'flash-gold');
     DOM.screenFlash.classList.add(`flash-${type}`);
-    
+
     setTimeout(() => {
         DOM.screenFlash.classList.add('hidden');
         DOM.screenFlash.classList.remove(`flash-${type}`);
@@ -28,8 +28,9 @@ function updateScoreDisplay() {
 
 function updateTimeDisplay() {
     DOM.timeDisplay.textContent = Math.ceil(GameState.timeLeft);
-    if (GameState.timeLeft <= 10) {
-        DOM.timeDisplay.style.color = '#FF4444';
+    // Endless mode: Green for surviving long!
+    if (GameState.timeLeft >= 60) {
+        DOM.timeDisplay.style.color = '#44FF44';
     } else {
         DOM.timeDisplay.style.color = '';
     }
@@ -43,7 +44,7 @@ function updateComboDisplay() {
     if (GameState.combo >= 2) {
         DOM.comboDisplay.classList.remove('hidden');
         DOM.comboCount.textContent = 'x' + GameState.combo;
-        
+
         // 高连击特效
         if (GameState.combo >= 10) {
             DOM.comboDisplay.classList.add('mega-combo');
@@ -63,13 +64,13 @@ function updateHighscoreDisplay() {
 function updateRageMeter() {
     const rageFill = document.getElementById('rage-fill');
     const rageValue = document.getElementById('rage-value');
-    
+
     if (!rageFill || !rageValue) return;
-    
+
     const percentage = Math.min(Math.round(GameState.enemyRageLevel * 100), 180);
     rageFill.style.width = Math.min(percentage, 100) + '%';
     rageValue.textContent = percentage + '%';
-    
+
     // 最大愤怒值特效
     if (percentage >= 150) {
         rageFill.classList.add('max-rage');

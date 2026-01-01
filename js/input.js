@@ -92,6 +92,17 @@ function setupControls() {
         }
 
         if (!e.repeat) {
+            // Instant Restart mechanism
+            if (!GameState.isPlaying && (e.code === 'Space' || e.key.toLowerCase() === 'r')) {
+                // Prevent accidental restart immediately after death? 
+                // Maybe check if game over screen is visible?
+                const gameOverVisible = !DOM.gameOverScreen.classList.contains('hidden');
+                if (gameOverVisible) {
+                    startGame();
+                    return;
+                }
+            }
+
             if (e.code === 'Space') {
                 requestJump();
                 e.preventDefault();

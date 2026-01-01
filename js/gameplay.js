@@ -252,6 +252,49 @@ function updatePlayer() {
     const targetCamX = GameState.player.position.x * CONFIG.CAMERA.OFFSET_X_RATIO;
     const targetCamZ = GameState.player.position.z + CONFIG.CAMERA.OFFSET_Z;
 
+    // ============ 新增：触发器检测 ============
+    // Jump Pad & Speed Pad Logic
+    if (!locked && GameState.interactables) {
+        for (const item of GameState.interactables) {
+            if (item.type === 'jump_pad' || item.type === 'speed_pad') {
+                const dx = GameState.player.position.x - item.mesh.position.x;
+                const dz = GameState.player.position.z - item.mesh.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                if (dist < 1.0) { // Close enough
+                    if (item.type === 'jump_pad' && GameState.playerBaseY < 0.5 && GameState.playerVelY <= 0) {
+                        // BOING!
+                        GameState.playerVelY = 35; // Super high jump
+                        GameState.playerOnGround = false;
+                        AudioManager.playTone(600, 0.1, 'square');
+                        setTimeout(() => AudioManager.playTone(1200, 0.2, 'sine'), 50);
+
+                        // Visual Kick
+                        item.mesh.scale.set(1.2, 0.5, 1.2);
+                        setTimeout(() => item.mesh.scale.set(1, 1, 1), 200);
+
+                        showCollectPopup('🚀 起飞!');
+                        particleSystem.emit(item.mesh.position, 0xFF4500, 20);
+                    }
+
+                    if (item.type === 'speed_pad') {
+                        // ZOOM!
+                        const boostDir = item.direction;
+                        // Force direction
+                        GameState.forcedMoveDir.copy(boostDir);
+                        GameState.forcedMoveUntil = now + 600; // 0.6s forced dash
+                        GameState.forcedMoveMultiplier = 4.0; // Extremely fast
+                        GameState.isInvincible = true; // Temporary safety
+                        setTimeout(() => GameState.isInvincible = false, 600);
+
+                        AudioManager.playTone(800, 0.1, 'sawtooth');
+                        particleSystem.emit(item.mesh.position, 0x00FFFF, 15);
+                    }
+                }
+            }
+        }
+    }
+
     // 2. 移除上一帧抖动 (反向操作，确保基础位置平滑)
     if (GameState.cameraShakeOffset) {
         GameState.camera.position.sub(GameState.cameraShakeOffset);
@@ -693,21 +736,42 @@ function updateEnemy() {
     updateDangerEffects(distToPlayer);
 
     // ----------------- 捕捉判定 -----------------
+    // ----------------- 捕捉判定 -----------------
     if (GameState.enemyState !== 'STUNNED' && GameState.enemyState !== 'GENKOTSU_PREP' && GameState.enemyState !== 'GENKOTSU_JUMP' && GameState.enemyState !== 'GENKOTSU_LAND') {
         const jumpDodge = GameState.playerBaseY > CONFIG.PHYSICS.MAX_JUMP_HEIGHT_FOR_DODGE;
         const noCatch = GameState.isInvincible || now < GameState.noCatchUntil || now < GameState.hiddenUntil || jumpDodge;
 
-        if (distToPlayer < CONFIG.CATCH_DISTANCE * 1.5 && !noCatch) {
+        // Near Miss Reward
+        if (distToPlayer < CONFIG.CATCH_DISTANCE * 1.5 && distToPlayer >= CONFIG.CATCH_DISTANCE && !GameState.isInvincible && !playerHidden) {
             if (now - GameState.lastDangerSoundTime > 800) {
                 GameState.nearMissCount++;
+                const bonus = 200;
+                GameState.score += bonus;
+                updateScoreDisplay();
+                showCollectPopup('🔥 极限闪避 +' + bonus);
+
                 AudioManager.playNearMiss();
                 showScreenFlash('red');
                 GameState.lastDangerSoundTime = now;
             }
         }
 
-        if (distToPlayer < CONFIG.CATCH_DISTANCE && !noCatch) {
-            playerCaught();
+        // Catch Logic
+        if (distToPlayer < CONFIG.CATCH_DISTANCE) {
+            if (!noCatch) {
+                playerCaught();
+            } else if (jumpDodge) {
+                // Perfect Dodge!
+                if (now - (GameState.lastPerfectDodgeTime || 0) > 1000) {
+                    GameState.perfectDodgeCount++;
+                    GameState.score += 500;
+                    updateScoreDisplay();
+                    showCollectPopup('✨ 完美跳跃 +500');
+                    AudioManager.playPerfectDodge();
+                    GameState.lastPerfectDodgeTime = now;
+                    // Slow motion effect briefly?
+                }
+            }
         }
     }
 }
