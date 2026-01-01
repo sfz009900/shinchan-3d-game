@@ -13,12 +13,23 @@ function updatePlayer() {
     let inputDirZ = locked ? 0 : input.dz;
     const wantToMove = !locked && input.moving;
 
-    // 修复：恢复跳跃逻辑
-    if (!locked && now < GameState.jumpBufferedUntil && GameState.playerOnGround) {
+    // 修复：恢复跳跃逻辑 + 土狼时间 (Coyote Time)
+    // 允许在离开地面后的一小段时间内跳跃，提升手感
+    const canJump = GameState.playerOnGround || (now - GameState.lastOnGroundTime < 120);
+
+    if (!locked && now < GameState.jumpBufferedUntil && canJump) {
         GameState.playerOnGround = false;
         GameState.playerVelY = CONFIG.PHYSICS.JUMP_VELOCITY;
         GameState.jumpBufferedUntil = 0;
+        GameState.lastOnGroundTime = 0; // 防止利用土狼时间二段跳
         AudioManager.playTone(740, 0.06);
+
+        // 稍微产生一点向前冲力，如果已经在移动的话（像Flappy Bird一样保持动量）
+        /* 
+        if (Math.abs(GameState.playerVelocity.x) > 0.1 || Math.abs(GameState.playerVelocity.z) > 0.1) {
+            GameState.playerVelocity.multiplyScalar(1.2); 
+        } 
+        */
     }
 
     // 竖直物理
@@ -33,6 +44,7 @@ function updatePlayer() {
     } else {
         GameState.playerBaseY = 0;
         GameState.playerVelY = 0;
+        GameState.lastOnGroundTime = now; // 持续更新落地时间
     }
 
     // 基础速度参数

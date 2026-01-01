@@ -24,23 +24,23 @@ const CONFIG = {
     PHYSICS: {
         FIXED_FPS: 60,
         MAX_FRAME_SCALE: 2.5,
-        GRAVITY: 26,                 // 增加重力：跳跃更快落地
-        JUMP_VELOCITY: 9.0,          // 提高跳跃速度
+        GRAVITY: 65,                 // 极高重力：像Flappy Bird一样快速下坠
+        JUMP_VELOCITY: 17.0,         // 强力跳跃：瞬间起飞
         MAX_JUMP_HEIGHT_FOR_DODGE: 0.7,
-        ACCELERATION: 0.025,         // 加速度 (每帧增加的速度)
-        FRICTION: 0.05,              // 摩擦力 (每帧减少的速度)
-        TURN_SPEED: 0.2              // 转向速度 (每帧旋转弧度)
+        ACCELERATION: 0.4,           // 极速起步：没有任何拖泥带水
+        FRICTION: 0.3,               // 快速刹车：精准控制
+        TURN_SPEED: 0.5              // 灵敏转向
     },
     CAMERA: {
-        SMOOTHNESS: 0.05,            // 位置跟随速度 (Lerp)
-        LOOK_SMOOTHNESS: 0.08,       // 视角跟随速度 (Lerp)
-        OFFSET_X_RATIO: 0.7,         // X轴跟随打折比例
-        OFFSET_Z: 18                 // Z轴距离
+        SMOOTHNESS: 0.12,            // 紧密跟随，减少漂移感
+        LOOK_SMOOTHNESS: 0.15,       // 视角锁定更准
+        OFFSET_X_RATIO: 0.6,
+        OFFSET_Z: 16                 //稍微拉近一点，更有代入感
     },
     DASH: {
-        DURATION: 220,               // 缩短冲刺时间
-        COOLDOWN: 1200,              // 缩短冷却，更频繁使用
-        SPEED_MULTIPLIER: 2.8        // 提高冲刺速度
+        DURATION: 180,               // 短促有力
+        COOLDOWN: 600,               // 极短冷却，鼓励频繁使用
+        SPEED_MULTIPLIER: 3.0        // 爆发速度
     },
     ENEMY_PHASE: {
         DURATION: 1300,              // 延长穿墙时间，更危险
@@ -128,6 +128,7 @@ const GameState = {
     playerVelocity: new THREE.Vector3(0, 0, 0), // 新增：玩家速度向量
     playerVelY: 0,
     playerOnGround: true,
+    lastOnGroundTime: 0, // 新增：土狼时间 (Coyote Time) 支持
     playerBaseY: 0,
     jumpBufferedUntil: 0,
     dashUntil: 0,
