@@ -60,6 +60,22 @@ const CONFIG = {
         SPEED_INCREASE_PER_10S: 0.015,    // 每10秒增加速度
         MAX_SPEED_MULTIPLIER: 1.8,        // 最大速度倍数
         RAGE_INCREASE_PER_COOKIE: 0.02    // 每收集一个饼干增加愤怒值
+    },
+    ENEMY_SKILLS: {
+        ROLLING: {
+            TRIGGER_DIST_MIN: 10,
+            DURATION: 3000,
+            COOLDOWN: 10000,
+            SPEED_MULT: 1.9,
+            CHANCE: 0.6 // per check interval
+        },
+        SHOUT: {
+            TRIGGER_DIST_MAX: 5.5,
+            DURATION: 1800, // Mother stops for this duration
+            STUN_DURATION: 1500, // Player stunned
+            COOLDOWN: 15000,
+            CHANCE: 0.4
+        }
     }
 };
 
@@ -118,6 +134,11 @@ const GameState = {
     enemyPhaseCooldownUntil: 0,
     enemyStuckSince: 0,
     enemyWasPhasing: false,
+    // Enemy Skills State
+    enemyState: 'CHASE', // CHASE, ROLLING, SHOUT, STUNNED
+    enemySkillTimer: 0,
+    enemySkillCooldowns: { rolling: 0, shout: 0 },
+    enemyRollDir: new THREE.Vector3(),
     shiroTripCooldownUntil: 0,
     dangerBeepAt: 0,
     cameraShakeOffset: new THREE.Vector3(),

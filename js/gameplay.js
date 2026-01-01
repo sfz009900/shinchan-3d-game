@@ -240,14 +240,65 @@ function startEnemyPhase(reason = 'hunt') {
     if (GameState.enemy) particleSystem.emit(GameState.enemy.position, 0xFF4D4D, 10);
 }
 
-// ============ 敌人AI ============
+// ============ 敌人AI (智能版) ============
+function calculateAvoidanceDirection(pos, targetDir, radius) {
+    // 简单的“触须”检测：检测前方、左前方、右前方
+    // 如果前方受阻，选择一个未受阻的侧向
+    const lookAheadDist = 2.0;
+
+    // Check Forward
+    const fwdPos = new THREE.Vector3(
+        pos.x + targetDir.x * lookAheadDist,
+        0,
+        pos.z + targetDir.z * lookAheadDist
+    );
+
+    if (!isPositionBlockedXZ(fwdPos.x, fwdPos.z, radius)) {
+        return targetDir; // 前方通畅
+    }
+
+    // Check Left 45
+    const leftDir = new THREE.Vector3(targetDir.x, 0, targetDir.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
+    const leftPos = new THREE.Vector3(
+        pos.x + leftDir.x * lookAheadDist,
+        0,
+        pos.z + leftDir.z * lookAheadDist
+    );
+    const leftClear = !isPositionBlockedXZ(leftPos.x, leftPos.z, radius);
+
+    // Check Right 45
+    const rightDir = new THREE.Vector3(targetDir.x, 0, targetDir.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 4);
+    const rightPos = new THREE.Vector3(
+        pos.x + rightDir.x * lookAheadDist,
+        0,
+        pos.z + rightDir.z * lookAheadDist
+    );
+    const rightClear = !isPositionBlockedXZ(rightPos.x, rightPos.z, radius);
+
+    if (leftClear && rightClear) {
+        // Both clear, pick random or alternate? Pick one closer to player? 
+        // For simplicity, pick Left (or random to avoid zig-zag)
+        return Math.random() < 0.5 ? leftDir : rightDir;
+    }
+    if (leftClear) return leftDir;
+    if (rightClear) return rightDir;
+
+    // All blocked? Try 90 degrees? Or just return forward and let collision slide handle it
+    return targetDir;
+}
+
 function updateEnemy() {
     if (!GameState.isPlaying || GameState.isPaused || !GameState.enemy || !GameState.player) return;
 
     const now = Date.now();
     const config = CONFIG.DIFFICULTY[GameState.difficulty];
-    
-    // 动态难度：随时间和收集数增加速度
+    const dt = GameState.delta || 1 / CONFIG.PHYSICS.FIXED_FPS;
+
+    // ----------------- 初始化/重置状态 -----------------
+    if (!GameState.enemyState) GameState.enemyState = 'CHASE';
+    if (!GameState.enemySkillCooldowns) GameState.enemySkillCooldowns = { rolling: 0, shout: 0 };
+
+    // ----------------- 动态难度 & 愤怒值 -----------------
     if (CONFIG.DIFFICULTY_SCALING.ENABLED) {
         const elapsedTime = (now - GameState.gameStartTime) / 1000;
         const timeMultiplier = Math.min(
@@ -256,240 +307,264 @@ function updateEnemy() {
         );
         GameState.enemyRageLevel = timeMultiplier * (config.enemyRageMultiplier || 1.0);
     }
-    
-    let phaseActive = now < GameState.enemyPhaseUntil;
 
-    // 处理“穿墙/幽灵追击”视觉切换
-    if (phaseActive !== GameState.enemyWasPhasing) {
-        setEnemyPhaseVisual(phaseActive);
-        // 穿墙结束时，拉回可走区域，避免卡在建筑体内
-        if (!phaseActive && GameState.enemy) {
-            const resolved = resolveCollisionsXZ(
-                GameState.enemy.position,
-                CONFIG.ENEMY_RADIUS,
-                Math.max(0, GameState.enemy.position.y)
-            );
-            GameState.enemy.position.x = resolved.x;
-            GameState.enemy.position.z = resolved.z;
-        }
-        GameState.enemyWasPhasing = phaseActive;
-    }
-
-    // 清理过期诱饵
-    if (now >= GameState.enemyDistractedUntil && GameState.enemyDistractionMesh) {
-        clearEnemyDistraction();
-    }
-
-    // 处理陷阱（香蕉皮）
-    for (let i = GameState.traps.length - 1; i >= 0; i--) {
-        const trap = GameState.traps[i];
-        if (now >= trap.expiresAt) {
-            GameState.scene.remove(trap.mesh);
-            GameState.traps.splice(i, 1);
-            continue;
-        }
-        const dx = GameState.enemy.position.x - trap.x;
-        const dz = GameState.enemy.position.z - trap.z;
-        const rr = (trap.radius ?? 1) + CONFIG.ENEMY_RADIUS;
-        if (dx * dx + dz * dz <= rr * rr) {
-            GameState.scene.remove(trap.mesh);
-            GameState.traps.splice(i, 1);
-            GameState.enemyStunnedUntil = now + 1200;
-            // 被香蕉皮打断穿墙
-            GameState.enemyPhaseUntil = 0;
-            GameState.enemyStuckSince = 0;
-            setEnemyPhaseVisual(false);
-            GameState.enemyWasPhasing = false;
-            particleSystem.emit(GameState.enemy.position, 0xFFD93D, 12);
-            AudioManager.playTone(110, 0.12, 'square');
-            showCollectPopup('💥 妈妈滑倒!');
-        }
-    }
-
-    // 眩晕：原地打滑
-    if (now < GameState.enemyStunnedUntil) {
-        const time = GameState.clock.getElapsedTime();
-        GameState.enemy.position.y = Math.abs(Math.sin(time * 10)) * 0.1;
-        GameState.enemy.rotation.z = Math.sin(time * 18) * 0.12;
-
-        const distXZ = Math.hypot(
-            GameState.enemy.position.x - GameState.player.position.x,
-            GameState.enemy.position.z - GameState.player.position.z
-        );
-        updateDangerEffects(distXZ);
-        return;
-    } else {
-        GameState.enemy.rotation.z = 0;
-    }
-
-    // 目标选择：诱饵 > 视野追踪玩家 > 最后已知位置/搜寻
+    // ----------------- 通用检测 -----------------
     const enemyPos = GameState.enemy.position;
     const playerPos = GameState.player.position;
+    const distToPlayer = enemyPos.distanceTo(playerPos);
     const playerHidden = now < GameState.hiddenUntil;
     const canSeePlayer = !playerHidden && hasLineOfSight(enemyPos, playerPos);
 
+    // 更新最后已知位置
     if (canSeePlayer) {
         GameState.enemyLastKnownPlayerPos.copy(playerPos);
     }
 
-    let targetPos = null;
-    let searching = false;
+    // ----------------- 状态机逻辑 -----------------
+    let moveSpeed = 0;
+    let moveDir = new THREE.Vector3();
+    let applyGravity = true; // 或者是保持 flying? 原代码是 stuck to ground usually.
 
-    if (now < GameState.enemyDistractedUntil) {
-        targetPos = GameState.enemyDistractionPos;
-        const d = Math.hypot(enemyPos.x - targetPos.x, enemyPos.z - targetPos.z);
-        if (d < 1.3) {
-            GameState.enemyDistractedUntil = 0;
-            clearEnemyDistraction();
+    // 处理陷阱/眩晕 (最高优先级)
+    if (now < GameState.enemyStunnedUntil) {
+        GameState.enemyState = 'STUNNED';
+        const t = GameState.clock.getElapsedTime();
+        GameState.enemy.position.y = Math.abs(Math.sin(t * 10)) * 0.1;
+        GameState.enemy.rotation.z = Math.sin(t * 18) * 0.12;
+        updateDangerEffects(distToPlayer);
+        return; // 眩晕时不行动
+    } else if (GameState.enemyState === 'STUNNED') {
+        GameState.enemyState = 'CHASE'; // 恢复
+        GameState.enemy.rotation.z = 0;
+    }
+
+    // 处理穿墙 (Phase)
+    // 穿墙是独立于 State 的状态修饰 (Modifier)，可以在 Chase 中触发
+    let phaseActive = now < GameState.enemyPhaseUntil;
+
+    // ----------------- 技能触发判断 (仅在 CHASE 状态) -----------------
+    if (GameState.enemyState === 'CHASE' && canSeePlayer && !phaseActive) {
+        // 1. 滚动攻击 (Rolling Attack)
+        if (now > GameState.enemySkillCooldowns.rolling &&
+            distToPlayer > CONFIG.ENEMY_SKILLS.ROLLING.TRIGGER_DIST_MIN &&
+            Math.random() < CONFIG.ENEMY_SKILLS.ROLLING.CHANCE * dt) { // chance per frame is tricky, multiply by dt
+
+            GameState.enemyState = 'ROLLING';
+            GameState.enemySkillTimer = now + CONFIG.ENEMY_SKILLS.ROLLING.DURATION;
+            GameState.enemySkillCooldowns.rolling = now + CONFIG.ENEMY_SKILLS.ROLLING.COOLDOWN;
+
+            // 确定滚动方向
+            const toPlayer = new THREE.Vector3().subVectors(playerPos, enemyPos).normalize();
+            GameState.enemyRollDir.copy(toPlayer);
+
+            showCollectPopup('🌪️ 妈妈滚过来了!');
+            AudioManager.playTone(150, 0.4, 'sawtooth'); // 轰隆声
         }
-    } else {
-        // 有几率追小白（更混乱、更刺激）
-        if (canSeePlayer && GameState.shiro && Math.random() < 0.012) {
-            const losToShiro = hasLineOfSight(enemyPos, GameState.shiro.position);
-            if (losToShiro) {
-                const distToShiro = enemyPos.distanceTo(GameState.shiro.position);
-                const distToPlayer = enemyPos.distanceTo(playerPos);
-                if (distToShiro < distToPlayer * 0.75) {
-                    targetPos = GameState.shiro.position;
+
+        // 2. 愤怒咆哮 (Angry Shout)
+        else if (now > GameState.enemySkillCooldowns.shout &&
+            distToPlayer < CONFIG.ENEMY_SKILLS.SHOUT.TRIGGER_DIST_MAX &&
+            Math.random() < CONFIG.ENEMY_SKILLS.SHOUT.CHANCE * dt) {
+
+            GameState.enemyState = 'SHOUT';
+            GameState.enemySkillTimer = now + CONFIG.ENEMY_SKILLS.SHOUT.DURATION;
+            GameState.enemySkillCooldowns.shout = now + CONFIG.ENEMY_SKILLS.SHOUT.COOLDOWN;
+
+            // 立即眩晕玩家
+            GameState.playerStunnedUntil = now + CONFIG.ENEMY_SKILLS.SHOUT.STUN_DURATION;
+            GameState.controlLockedUntil = Math.max(GameState.controlLockedUntil, GameState.playerStunnedUntil);
+
+            showCollectPopup('🤬 站住!!!'); // 视觉文字
+            AudioManager.playTone(600, 0.6, 'square'); // 咆哮音效
+            showScreenFlash('red');
+            particleSystem.emit(enemyPos, 0xFF0000, 20); // 爆发粒子
+        }
+    }
+
+    // ----------------- 状态执行 -----------------
+
+    if (GameState.enemyState === 'SHOUT') {
+        // 咆哮中：原地不动，震动
+        if (now > GameState.enemySkillTimer) {
+            GameState.enemyState = 'CHASE';
+        } else {
+            // 视觉震动
+            GameState.enemy.position.x += (Math.random() - 0.5) * 0.1;
+            GameState.enemy.position.z += (Math.random() - 0.5) * 0.1;
+        }
+    }
+
+    else if (GameState.enemyState === 'ROLLING') {
+        // 滚动中：高速直线冲锋 (带一点点追踪)
+        if (now > GameState.enemySkillTimer) {
+            GameState.enemyState = 'CHASE';
+            GameState.enemy.rotation.x = 0; // 复位旋转
+            GameState.enemy.rotation.z = 0;
+        } else {
+            const speed = config.enemySpeed * CONFIG.ENEMY_SKILLS.ROLLING.SPEED_MULT * GameState.enemyRageLevel;
+
+            // 缓慢转向玩家
+            const toPlayer = new THREE.Vector3().subVectors(playerPos, enemyPos).normalize();
+            GameState.enemyRollDir.lerp(toPlayer, 0.05); // 转向惯性
+            GameState.enemyRollDir.normalize();
+
+            moveX = GameState.enemyRollDir.x * speed * (GameState.frameScale || 1);
+            moveZ = GameState.enemyRollDir.z * speed * (GameState.frameScale || 1);
+
+            moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, 0);
+
+            // 视觉旋转
+            GameState.enemy.children[0].rotation.x -= 0.5; // 假设第一个子对象是 body
+            GameState.enemy.rotation.y = Math.atan2(GameState.enemyRollDir.x, GameState.enemyRollDir.z);
+
+            // 滚动产生粒子
+            if (Math.random() < 0.3) {
+                particleSystem.emit(new THREE.Vector3(enemyPos.x, 0, enemyPos.z), 0x8B4513, 2);
+            }
+        }
+    }
+
+    else {
+        // === Default: CHASE State ===
+        GameState.enemyState = 'CHASE';
+
+        // 1. 视觉切换 (Normal vs Phase)
+        if (phaseActive !== GameState.enemyWasPhasing) {
+            setEnemyPhaseVisual(phaseActive);
+            if (!phaseActive) {
+                // 退出穿墙，确保不在墙里
+                const resolved = resolveCollisionsXZ(enemyPos, CONFIG.ENEMY_RADIUS, 0);
+                enemyPos.x = resolved.x;
+                enemyPos.z = resolved.z;
+            }
+            GameState.enemyWasPhasing = phaseActive;
+        }
+
+        // 2. 目标确定
+        let targetPos = null;
+        let searching = false;
+
+        // 诱饵优先级最高
+        if (now < GameState.enemyDistractedUntil) {
+            targetPos = GameState.enemyDistractionPos;
+            if (enemyPos.distanceTo(targetPos) < 1.3) {
+                GameState.enemyDistractedUntil = 0;
+                clearEnemyDistraction();
+            }
+        }
+        // 否则追玩家/搜索
+        else {
+            if (canSeePlayer) {
+                targetPos = playerPos;
+                // 偶尔追小白逻辑保留
+                if (GameState.shiro && Math.random() < 0.01) {
+                    if (hasLineOfSight(enemyPos, GameState.shiro.position) &&
+                        enemyPos.distanceTo(GameState.shiro.position) < distToPlayer) {
+                        targetPos = GameState.shiro.position;
+                    }
+                }
+            } else {
+                // 丢失视野：搜寻逻辑
+                targetPos = GameState.enemyLastKnownPlayerPos;
+                if (enemyPos.distanceTo(targetPos) < 2.5) {
+                    // 到达最后位置，开始随机搜索
+                    if (now >= GameState.enemySearchUntil) {
+                        GameState.enemySearchUntil = now + 2000;
+                        const a = Math.random() * Math.PI * 2;
+                        const r = 5 + Math.random() * 5;
+                        GameState.enemySearchTarget.set(targetPos.x + Math.cos(a) * r, 0, targetPos.z + Math.sin(a) * r);
+                        clampToWorldXZ(GameState.enemySearchTarget);
+                    }
+                    targetPos = GameState.enemySearchTarget;
+                    searching = true;
                 }
             }
         }
 
-        if (!targetPos) {
-            targetPos = canSeePlayer ? playerPos : GameState.enemyLastKnownPlayerPos;
-        }
+        // 3. 移动逻辑
+        const toTarget = new THREE.Vector3().subVectors(targetPos, enemyPos);
+        const distToTarget = toTarget.length();
 
-        // 丢失视野：到达最后位置后进行搜寻
-        if (!canSeePlayer) {
-            const d = Math.hypot(enemyPos.x - targetPos.x, enemyPos.z - targetPos.z);
-            if (d < 2.5) {
-                if (now >= GameState.enemySearchUntil) {
-                    GameState.enemySearchUntil = now + 1700;
-                    const a = Math.random() * Math.PI * 2;
-                    const r = 4 + Math.random() * 5;
-                    GameState.enemySearchTarget.set(
-                        targetPos.x + Math.cos(a) * r,
-                        0,
-                        targetPos.z + Math.sin(a) * r
-                    );
-                    clampToWorldXZ(GameState.enemySearchTarget);
-                }
+        if (distToTarget > 0.1) {
+            toTarget.normalize();
+
+            // 计算基础速度
+            let speed = config.enemySpeed * (GameState.frameScale || 1) * GameState.enemyRageLevel;
+            speed *= getZoneSpeedFactor(enemyPos.x, enemyPos.z, 'enemy');
+            if (phaseActive) speed *= CONFIG.ENEMY_PHASE.SPEED_MULTIPLIER;
+            if (searching) speed *= 0.8;
+
+            let finalDir = toTarget;
+
+            // 如果不穿墙，应用新的避障算法
+            // 只有在稍微远一点才避障，贴脸时直接追
+            if (!phaseActive && distToPlayer > 2.0) {
+                finalDir = calculateAvoidanceDirection(enemyPos, toTarget, CONFIG.ENEMY_RADIUS);
             }
-            if (now < GameState.enemySearchUntil) {
-                targetPos = GameState.enemySearchTarget;
-                searching = true;
+
+            const moveX = finalDir.x * speed;
+            const moveZ = finalDir.z * speed;
+
+            const beforePos = enemyPos.clone();
+
+            if (phaseActive) {
+                enemyPos.x += moveX;
+                enemyPos.z += moveZ;
+                clampToWorldXZ(enemyPos);
+            } else {
+                moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, 0);
             }
-        } else {
-            GameState.enemySearchUntil = 0;
-        }
-    }
 
-    // 追击移动（带地形/紧张度加成）
-    const toX = targetPos.x - enemyPos.x;
-    const toZ = targetPos.z - enemyPos.z;
-    const distance = Math.hypot(toX, toZ);
-
-    const distToPlayerXZ = Math.hypot(enemyPos.x - playerPos.x, enemyPos.z - playerPos.z);
-    updateDangerEffects(distToPlayerXZ);
-
-    // 没视野时：有概率“穿墙追击”；以及卡住太久会强制穿墙，避免妈妈像傻瓜一样绕半天
-    if (!phaseActive && !playerHidden && now >= GameState.enemyPhaseCooldownUntil) {
-        const delta = GameState.delta || 1 / CONFIG.PHYSICS.FIXED_FPS;
-        const diffMul = GameState.difficulty === 'easy' ? 0.7 : (GameState.difficulty === 'hard' ? 1.25 : 1);
-        const chance = CONFIG.ENEMY_PHASE.CHANCE_PER_SECOND * diffMul * delta;
-        const stuckTooLong = GameState.enemyStuckSince > 0 && (now - GameState.enemyStuckSince) >= CONFIG.ENEMY_PHASE.STUCK_TRIGGER_MS;
-        const huntPhase = !canSeePlayer && distToPlayerXZ < CONFIG.ENEMY_PHASE.TRIGGER_DISTANCE && Math.random() < chance;
-        if ((stuckTooLong && distToPlayerXZ < 18) || huntPhase) {
-            startEnemyPhase(stuckTooLong ? 'stuck' : 'hunt');
-            phaseActive = true;
-        }
-    }
-
-    if (distance > 0.12) {
-        const scale = GameState.frameScale ?? 1;
-        const zoneFactor = getZoneSpeedFactor(enemyPos.x, enemyPos.z, 'enemy');
-        let rage = 1;
-        if (GameState.timeLeft <= 12) rage *= 1.22;
-        if (GameState.combo >= 6) rage *= 1.12;
-        if (distToPlayerXZ < 6) rage *= 1.15;
-        if (searching) rage *= 0.9;
-        if (now < GameState.enemyDistractedUntil) rage *= 0.92;
-
-        const step = config.enemySpeed * scale * zoneFactor * rage * (phaseActive ? CONFIG.ENEMY_PHASE.SPEED_MULTIPLIER : 1);
-        const moveX = (toX / distance) * step;
-        const moveZ = (toZ / distance) * step;
-
-        const before = enemyPos.clone();
-        if (phaseActive) {
-            // 穿墙：不做碰撞解析，直线压迫
-            enemyPos.x += moveX;
-            enemyPos.z += moveZ;
-            clampToWorldXZ(enemyPos);
-        } else {
-            moveWithCollisions(GameState.enemy, moveX, moveZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
-            const moved = enemyPos.distanceTo(before);
-
-            // 简单“绕障”防卡死：如果完全没动，尝试横向挪一下
-            if (moved < 0.001) {
-                const sideX = -(toZ / distance) * (step * 0.9);
-                const sideZ = (toX / distance) * (step * 0.9);
-                moveWithCollisions(GameState.enemy, sideX, sideZ, CONFIG.ENEMY_RADIUS, Math.max(0, enemyPos.y));
-            }
-        }
-
-        // 卡住检测（用于触发穿墙）
-        if (!phaseActive) {
-            const movedTotal = enemyPos.distanceTo(before);
-            if (movedTotal < 0.001 && distance > 1.8) {
+            // 4. 卡住检测 -> 触发穿墙
+            const movedMap = enemyPos.distanceTo(beforePos);
+            if (!phaseActive && movedMap < 0.001 && distToTarget > 1.0) {
                 if (!GameState.enemyStuckSince) GameState.enemyStuckSince = now;
+                if (now - GameState.enemyStuckSince > CONFIG.ENEMY_PHASE.STUCK_TRIGGER_MS) {
+                    startEnemyPhase('stuck');
+                }
             } else {
                 GameState.enemyStuckSince = 0;
             }
-        } else {
-            GameState.enemyStuckSince = 0;
+
+            // 随机相位穿墙 (压迫感)
+            if (!phaseActive && !playerHidden && now > GameState.enemyPhaseCooldownUntil) {
+                const chance = CONFIG.ENEMY_PHASE.CHANCE_PER_SECOND * dt;
+                if (distToPlayer < CONFIG.ENEMY_PHASE.TRIGGER_DISTANCE && Math.random() < chance) {
+                    startEnemyPhase('hunt');
+                }
+            }
+
+            // 面向
+            GameState.enemy.rotation.y = Math.atan2(finalDir.x, finalDir.z);
+
+            // 走路起伏
+            const t = GameState.clock.getElapsedTime();
+            GameState.enemy.position.y = Math.abs(Math.sin(t * 12)) * 0.1;
         }
+    } // End CHASE
 
-        GameState.enemy.rotation.y = Math.atan2(toX, toZ);
+    updateDangerEffects(distToPlayer);
 
-        const time = GameState.clock.getElapsedTime();
-        GameState.enemy.position.y = Math.abs(Math.sin(time * 10)) * 0.1;
-    }
+    // ----------------- 捕捉判定 -----------------
+    // 任何状态下接近玩家都算抓到 (除了 STUNNED)
+    if (GameState.enemyState !== 'STUNNED') {
+        const jumpDodge = GameState.playerBaseY > CONFIG.PHYSICS.MAX_JUMP_HEIGHT_FOR_DODGE;
+        const noCatch = GameState.isInvincible || now < GameState.noCatchUntil || now < GameState.hiddenUntil || jumpDodge;
 
-    // 检查抓住玩家
-    const playerDist = GameState.enemy.position.distanceTo(GameState.player.position);
-    const jumpDodge = GameState.playerBaseY > CONFIG.PHYSICS.MAX_JUMP_HEIGHT_FOR_DODGE;
-    const noCatch = GameState.isInvincible || now < GameState.noCatchUntil || now < GameState.hiddenUntil || jumpDodge;
-    
-    // 险些被抓检测（增加紧张感）
-    if (playerDist < CONFIG.CATCH_DISTANCE * 1.8 && playerDist >= CONFIG.CATCH_DISTANCE && !noCatch && !playerHidden) {
-        if (now - GameState.lastDangerSoundTime > 800) {
-            GameState.nearMissCount++;
-            AudioManager.playNearMiss();
-            showScreenFlash('red');
-            GameState.lastDangerSoundTime = now;
-            if (Math.random() < 0.3) {
-                showCollectPopup('💨 好险!');
+        // 险些被抓
+        if (distToPlayer < CONFIG.CATCH_DISTANCE * 1.5 && !noCatch) {
+            if (now - GameState.lastDangerSoundTime > 800) {
+                GameState.nearMissCount++;
+                AudioManager.playNearMiss();
+                showScreenFlash('red');
+                GameState.lastDangerSoundTime = now;
             }
         }
-    }
-    
-    // 完美躲避检测（跳跃躲避）
-    if (jumpDodge && playerDist < CONFIG.CATCH_DISTANCE * 1.3) {
-        if (now - GameState.lastDangerSoundTime > 600) {
-            GameState.perfectDodgeCount++;
-            AudioManager.playPerfectDodge();
-            showScreenFlash('gold');
-            GameState.lastDangerSoundTime = now;
-            const bonus = 15;
-            GameState.score += bonus;
-            updateScoreDisplay();
-            showCollectPopup(`⭐ 完美躲避 +${bonus}`);
-            particleSystem.emit(GameState.player.position, 0xFFD700, 6);
+
+        // 抓到了！
+        if (distToPlayer < CONFIG.CATCH_DISTANCE && !noCatch) {
+            playerCaught();
         }
-    }
-    
-    if (playerDist < CONFIG.CATCH_DISTANCE && !noCatch) {
-        playerCaught();
     }
 }
 
@@ -562,6 +637,16 @@ function playerCaught() {
     GameState.enemyPhaseUntil = 0;
     GameState.enemyStuckSince = 0;
     GameState.enemyPhaseCooldownUntil = now + 1200;
+
+    // Reset AI States
+    GameState.enemyState = 'CHASE';
+    GameState.enemySkillTimer = 0;
+    GameState.enemySkillCooldowns = { rolling: 0, shout: 0 };
+    if (GameState.enemy) {
+        GameState.enemy.rotation.x = 0;
+        GameState.enemy.rotation.z = 0;
+    }
+
     if (GameState.enemyWasPhasing) setEnemyPhaseVisual(false);
     GameState.enemyWasPhasing = false;
     // 短暂无敌保护，避免连环被抓
@@ -648,7 +733,7 @@ function collectCookie(cookie, index) {
 
     // 粒子效果
     const color = cookie.userData.type === 'star' ? 0xFFD700 :
-                  cookie.userData.type === 'heart' ? 0xFF69B4 : 0xD2691E;
+        cookie.userData.type === 'heart' ? 0xFF69B4 : 0xD2691E;
     particleSystem.emit(cookie.position, color, 8);
 
     // 移除并生成新饼干
