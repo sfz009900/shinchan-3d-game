@@ -89,6 +89,7 @@ function startGame() {
     if (AudioManager.context && AudioManager.context.state === 'suspended') {
         AudioManager.context.resume();
     }
+    AudioManager.playBGM();
 }
 
 function startGameTimer() {
@@ -116,7 +117,9 @@ function togglePause() {
         setActionPrompt(false);
         GameState.dangerBeepAt = 0;
         DOM.pauseScreen.classList.remove('hidden');
+        DOM.pauseScreen.classList.remove('hidden');
         DOM.pauseScore.textContent = GameState.score;
+        AudioManager.pauseBGM();
         DOM.pauseTime.textContent = Math.ceil(GameState.timeLeft);
     } else {
         DOM.pauseScreen.classList.add('hidden');
@@ -125,6 +128,7 @@ function togglePause() {
 
 function resumeGame() {
     GameState.isPaused = false;
+    AudioManager.playBGM();
     DOM.pauseScreen.classList.add('hidden');
 }
 
@@ -146,6 +150,9 @@ function quitToMenu() {
         GameState.camera.position.sub(GameState.cameraShakeOffset);
         GameState.cameraShakeOffset.set(0, 0, 0);
     }
+
+
+    AudioManager.stopBGM();
 
     DOM.pauseScreen.classList.add('hidden');
     DOM.gameUI.classList.add('hidden');
@@ -173,6 +180,7 @@ function gameOver() {
         GameState.camera.position.sub(GameState.cameraShakeOffset);
         GameState.cameraShakeOffset.set(0, 0, 0);
     }
+    AudioManager.stopBGM();
 
     // 检查新纪录
     const isNewRecord = GameState.score > GameState.highScore;
@@ -215,13 +223,13 @@ function copyScore() {
         hard: '困难',
         nightmare: '噩梦'
     };
-    
+
     const text = `🖍️ 蜡笔小新饼干大作战 🍪\n` +
-                 `得分: ${GameState.score}\n` +
-                 `最高连击: ${GameState.maxCombo}\n` +
-                 `险些被抓: ${GameState.nearMissCount}\n` +
-                 `完美躲避: ${GameState.perfectDodgeCount}\n` +
-                 `难度: ${difficultyNames[GameState.difficulty] || GameState.difficulty}`;
+        `得分: ${GameState.score}\n` +
+        `最高连击: ${GameState.maxCombo}\n` +
+        `险些被抓: ${GameState.nearMissCount}\n` +
+        `完美躲避: ${GameState.perfectDodgeCount}\n` +
+        `难度: ${difficultyNames[GameState.difficulty] || GameState.difficulty}`;
 
     navigator.clipboard.writeText(text).then(() => {
         DOM.copyScoreBtn.textContent = '✅ 已复制!';
@@ -311,6 +319,14 @@ function bindEvents() {
         GameState.soundEnabled = !GameState.soundEnabled;
         DOM.soundToggle.textContent = GameState.soundEnabled ? '🔊' : '🔇';
         DOM.soundToggle.classList.toggle('muted', !GameState.soundEnabled);
+
+        if (GameState.isPlaying && !GameState.isPaused) {
+            if (GameState.soundEnabled) {
+                AudioManager.playBGM();
+            } else {
+                AudioManager.pauseBGM();
+            }
+        }
     });
 
     // 难度选择

@@ -213,11 +213,49 @@ const AudioManager = {
     context: null,
     sounds: {},
 
+    bgm: null,
+
     init() {
         try {
             this.context = new (window.AudioContext || window.webkitAudioContext)();
+            this.initBGM();
         } catch (e) {
             console.log('Web Audio API not supported');
+        }
+    },
+
+    initBGM() {
+        if (!this.bgm) {
+            this.bgm = new Audio('assets/bgm.mp3');
+            this.bgm.loop = true;
+            this.bgm.volume = 0.4;
+        }
+    },
+
+    playBGM() {
+        if (this.bgm && GameState.soundEnabled) {
+            if (this.context && this.context.state === 'suspended') {
+                this.context.resume();
+            }
+            const playPromise = this.bgm.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log("BGM Auto-play prevented:", error);
+                });
+            }
+        }
+    },
+
+    pauseBGM() {
+        if (this.bgm) {
+            this.bgm.pause();
+        }
+    },
+
+    stopBGM() {
+        if (this.bgm) {
+            this.bgm.pause();
+            this.bgm.currentTime = 0;
         }
     },
 
