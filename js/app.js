@@ -30,6 +30,12 @@ function startGame() {
     GameState.enemyStuckSince = 0;
     GameState.enemyWasPhasing = false;
     GameState.shiroTripCooldownUntil = 0;
+    GameState.gameStartTime = Date.now();
+    GameState.cookiesCollected = 0;
+    GameState.enemyRageLevel = config.enemyRageMultiplier || 1.0;
+    GameState.nearMissCount = 0;
+    GameState.perfectDodgeCount = 0;
+    GameState.lastDangerSoundTime = 0;
     setEnemyPhaseVisual(false);
     if (GameState.cameraShakeOffset && GameState.camera) {
         GameState.camera.position.sub(GameState.cameraShakeOffset);
@@ -153,6 +159,7 @@ function gameOver() {
 
     AudioManager.playGameOver();
     DOM.gameUI.classList.remove('danger');
+    DOM.gameUI.classList.remove('extreme-danger');
     setActionPrompt(false);
     GameState.dangerBeepAt = 0;
     clearEnemyDistraction();
@@ -180,6 +187,8 @@ function gameOver() {
     // 更新结束界面
     DOM.finalScore.textContent = GameState.score;
     DOM.maxComboDisplay.textContent = GameState.maxCombo;
+    document.getElementById('near-miss-count').textContent = GameState.nearMissCount;
+    document.getElementById('perfect-dodge-count').textContent = GameState.perfectDodgeCount;
     DOM.resultGrade.textContent = grade;
     DOM.newRecord.style.display = isNewRecord ? 'flex' : 'none';
 
@@ -190,19 +199,29 @@ function gameOver() {
 }
 
 function calculateGrade(score) {
-    if (score >= 500) return 'S';
-    if (score >= 400) return 'A';
-    if (score >= 300) return 'B';
+    if (score >= 800) return 'SS';
+    if (score >= 600) return 'S';
+    if (score >= 450) return 'A';
+    if (score >= 320) return 'B';
     if (score >= 200) return 'C';
     if (score >= 100) return 'D';
     return 'E';
 }
 
 function copyScore() {
+    const difficultyNames = {
+        easy: '简单',
+        normal: '普通',
+        hard: '困难',
+        nightmare: '噩梦'
+    };
+    
     const text = `🖍️ 蜡笔小新饼干大作战 🍪\n` +
                  `得分: ${GameState.score}\n` +
                  `最高连击: ${GameState.maxCombo}\n` +
-                 `难度: ${GameState.difficulty}`;
+                 `险些被抓: ${GameState.nearMissCount}\n` +
+                 `完美躲避: ${GameState.perfectDodgeCount}\n` +
+                 `难度: ${difficultyNames[GameState.difficulty] || GameState.difficulty}`;
 
     navigator.clipboard.writeText(text).then(() => {
         DOM.copyScoreBtn.textContent = '✅ 已复制!';
@@ -235,6 +254,7 @@ function animate() {
         checkCollections();
         animateCookies();
         particleSystem.update();
+        updateRageMeter();
     }
 
     animateClouds();

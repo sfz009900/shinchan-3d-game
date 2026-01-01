@@ -160,15 +160,40 @@ function updateDangerEffects(distToPlayer) {
     const now = Date.now();
     const hidden = now < GameState.hiddenUntil;
 
-    if (!hidden && distToPlayer < 6.2) {
-        DOM.gameUI.classList.add('danger');
-        const interval = distToPlayer < 3.2 ? 240 : 420;
-        if (now >= GameState.dangerBeepAt) {
-            AudioManager.playTone(distToPlayer < 3.2 ? 180 : 140, 0.04, 'sine');
-            GameState.dangerBeepAt = now + interval;
+    if (!hidden && distToPlayer < 8.5) {
+        // 极度危险：非常接近
+        if (distToPlayer < 3.0) {
+            DOM.gameUI.classList.add('extreme-danger');
+            DOM.gameUI.classList.remove('danger');
+            const interval = 150;
+            if (now >= GameState.dangerBeepAt) {
+                AudioManager.playIntenseChase();
+                GameState.dangerBeepAt = now + interval;
+            }
+        } 
+        // 危险：接近
+        else if (distToPlayer < 6.5) {
+            DOM.gameUI.classList.add('danger');
+            DOM.gameUI.classList.remove('extreme-danger');
+            const interval = distToPlayer < 4.5 ? 280 : 450;
+            if (now >= GameState.dangerBeepAt) {
+                AudioManager.playTone(distToPlayer < 4.5 ? 180 : 140, 0.04, 'sine');
+                GameState.dangerBeepAt = now + interval;
+            }
+        }
+        // 警告：较远
+        else {
+            DOM.gameUI.classList.add('danger');
+            DOM.gameUI.classList.remove('extreme-danger');
+            const interval = 600;
+            if (now >= GameState.dangerBeepAt) {
+                AudioManager.playTone(120, 0.03, 'sine');
+                GameState.dangerBeepAt = now + interval;
+            }
         }
     } else {
         DOM.gameUI.classList.remove('danger');
+        DOM.gameUI.classList.remove('extreme-danger');
     }
 }
 

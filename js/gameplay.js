@@ -246,6 +246,17 @@ function updateEnemy() {
 
     const now = Date.now();
     const config = CONFIG.DIFFICULTY[GameState.difficulty];
+    
+    // 动态难度：随时间和收集数增加速度
+    if (CONFIG.DIFFICULTY_SCALING.ENABLED) {
+        const elapsedTime = (now - GameState.gameStartTime) / 1000;
+        const timeMultiplier = Math.min(
+            1 + (Math.floor(elapsedTime / 10) * CONFIG.DIFFICULTY_SCALING.SPEED_INCREASE_PER_10S),
+            CONFIG.DIFFICULTY_SCALING.MAX_SPEED_MULTIPLIER
+        );
+        GameState.enemyRageLevel = timeMultiplier * (config.enemyRageMultiplier || 1.0);
+    }
+    
     let phaseActive = now < GameState.enemyPhaseUntil;
 
     // 处理“穿墙/幽灵追击”视觉切换
@@ -448,6 +459,35 @@ function updateEnemy() {
     const playerDist = GameState.enemy.position.distanceTo(GameState.player.position);
     const jumpDodge = GameState.playerBaseY > CONFIG.PHYSICS.MAX_JUMP_HEIGHT_FOR_DODGE;
     const noCatch = GameState.isInvincible || now < GameState.noCatchUntil || now < GameState.hiddenUntil || jumpDodge;
+    
+    // 险些被抓检测（增加紧张感）
+    if (playerDist < CONFIG.CATCH_DISTANCE * 1.8 && playerDist >= CONFIG.CATCH_DISTANCE && !noCatch && !playerHidden) {
+        if (now - GameState.lastDangerSoundTime > 800) {
+            GameState.nearMissCount++;
+            AudioManager.playNearMiss();
+            showScreenFlash('red');
+            GameState.lastDangerSoundTime = now;
+            if (Math.random() < 0.3) {
+                showCollectPopup('💨 好险!');
+            }
+        }
+    }
+    
+    // 完美躲避检测（跳跃躲避）
+    if (jumpDodge && playerDist < CONFIG.CATCH_DISTANCE * 1.3) {
+        if (now - GameState.lastDangerSoundTime > 600) {
+            GameState.perfectDodgeCount++;
+            AudioManager.playPerfectDodge();
+            showScreenFlash('gold');
+            GameState.lastDangerSoundTime = now;
+            const bonus = 15;
+            GameState.score += bonus;
+            updateScoreDisplay();
+            showCollectPopup(`⭐ 完美躲避 +${bonus}`);
+            particleSystem.emit(GameState.player.position, 0xFFD700, 6);
+        }
+    }
+    
     if (playerDist < CONFIG.CATCH_DISTANCE && !noCatch) {
         playerCaught();
     }
@@ -575,9 +615,15 @@ function collectCookie(cookie, index) {
         GameState.combo = 1;
     }
     GameState.lastCollectTime = now;
+    GameState.cookiesCollected++;
+
+    // 动态难度：收集饼干增加敌人愤怒值
+    if (CONFIG.DIFFICULTY_SCALING.ENABLED) {
+        GameState.enemyRageLevel += CONFIG.DIFFICULTY_SCALING.RAGE_INCREASE_PER_COOKIE;
+    }
 
     // 计算分数 (连击加成)
-    const comboMultiplier = 1 + (GameState.combo - 1) * 0.1;
+    const comboMultiplier = 1 + (GameState.combo - 1) * 0.15;  // 提高连击加成
     let finalPoints = Math.floor(points * comboMultiplier);
     let panicBonus = false;
     if (GameState.enemy && now >= GameState.hiddenUntil) {

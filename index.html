@@ -60,9 +60,10 @@
             <div class="difficulty-selector">
                 <span>难度选择:</span>
                 <div class="difficulty-options">
-                    <button class="diff-btn active" data-difficulty="easy">简单</button>
-                    <button class="diff-btn" data-difficulty="normal">普通</button>
+                    <button class="diff-btn" data-difficulty="easy">简单</button>
+                    <button class="diff-btn active" data-difficulty="normal">普通</button>
                     <button class="diff-btn" data-difficulty="hard">困难</button>
+                    <button class="diff-btn nightmare-btn" data-difficulty="nightmare">噩梦</button>
                 </div>
             </div>
         </div>
@@ -95,7 +96,7 @@
                     <div class="instruction-icon">🦘</div>
                     <div class="instruction-text">
                         <h3>跳跃 / 冲刺</h3>
-                        <p>空格：跳跃（可躲开妈妈的抓）</p>
+                        <p>空格：跳跃（可躲开妈妈的抓，完美躲避有奖励！）</p>
                         <p>Shift：冲刺（短暂无敌，带冷却）</p>
                     </div>
                 </div>
@@ -120,7 +121,7 @@
                     <div class="instruction-text">
                         <h3>收集饼干</h3>
                         <p>收集场景中的饼干得分</p>
-                        <p>不同饼干分值不同!</p>
+                        <p>不同饼干分值不同！连击和危险区域有加成！</p>
                     </div>
                 </div>
                 <div class="instruction-item">
@@ -154,7 +155,7 @@
                     <div class="instruction-text">
                         <h3>目标</h3>
                         <p>在时间内收集尽可能多的饼干</p>
-                        <p>挑战高分记录!</p>
+                        <p>挑战高分记录! 完美躲避和高连击有额外奖励!</p>
                     </div>
                 </div>
             </div>
@@ -194,6 +195,13 @@
         <div class="bottom-info">
             <div class="highscore-display">
                 🏆 最高分: <span id="highscore">0</span>
+            </div>
+            <div class="rage-meter-container" id="rage-meter-container">
+                <span class="rage-label">妈妈愤怒值:</span>
+                <div class="rage-meter">
+                    <div class="rage-fill" id="rage-fill"></div>
+                </div>
+                <span class="rage-value" id="rage-value">100%</span>
             </div>
         </div>
     </div>
@@ -248,6 +256,16 @@
                         <span class="stat-value" id="max-combo">0</span>
                         <span class="stat-icon">🔥</span>
                     </div>
+                    <div class="stat-item">
+                        <span class="stat-label">险些被抓</span>
+                        <span class="stat-value" id="near-miss-count">0</span>
+                        <span class="stat-icon">💨</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">完美躲避</span>
+                        <span class="stat-value" id="perfect-dodge-count">0</span>
+                        <span class="stat-icon">⭐</span>
+                    </div>
                     <div class="stat-item highlight" id="new-record" style="display: none;">
                         <span class="stat-label">🎉 新纪录!</span>
                     </div>
@@ -291,6 +309,9 @@
 
     <!-- Three.js 游戏容器 -->
     <div id="game-container"></div>
+
+    <!-- 屏幕闪烁效果 -->
+    <div id="screen-flash" class="hidden"></div>
 
     <!-- 音效管理 -->
     <button id="sound-toggle" class="sound-btn">🔊</button>
