@@ -72,16 +72,26 @@ const CONFIG = {
     },
     ENEMY_SKILLS: {
         ROLLING: {
-            TRIGGER_DIST_MIN: 10,
-            DURATION: 3000,
-            COOLDOWN: 10000,
-            SPEED_MULT: 1.9,
-            CHANCE: 0.6 // per check interval
+            TRIGGER_DIST_MIN: 8,
+            DURATION: 2500,
+            COOLDOWN: 8000,
+            SPEED_MULT: 2.2, // Faster roll
+            CHANCE: 0.7
         },
         SHOUT: {
-            TRIGGER_DIST_MAX: 5.5,
-            DURATION: 1800, // Mother stops for this duration
-            STUN_DURATION: 1500, // Player stunned
+            TRIGGER_DIST_MAX: 6.0,
+            DURATION: 1500,
+            STUN_DURATION: 1800,
+            COOLDOWN: 12000,
+            CHANCE: 0.5
+        },
+        GENKOTSU: { // New Skill: Iron Fist Drop
+            TRIGGER_DIST_MIN: 0,
+            TRIGGER_DIST_MAX: 20,
+            JUMP_DURATION: 1000,
+            DROP_SPEED: 25,
+            IMPACT_RADIUS: 2.5,
+            STUN_DURATION: 2500,
             COOLDOWN: 15000,
             CHANCE: 0.4
         }
