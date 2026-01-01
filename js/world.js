@@ -58,7 +58,38 @@ function initThreeJS() {
     GameState.scene.add(GameState.enemy);
 
     GameState.shiro = createShiro();
+
     GameState.scene.add(GameState.shiro);
+
+    // 小葵
+    const himawari = createHimawari();
+    if (GameState.mapLayout && GameState.mapLayout.himawariSpawn) {
+        himawari.position.set(GameState.mapLayout.himawariSpawn.x, 0, GameState.mapLayout.himawariSpawn.z);
+    } else {
+        himawari.position.set(-15, 0, -15);
+    }
+    // 随机爬行方向
+    himawari.rotation.y = Math.random() * Math.PI * 2;
+    GameState.worldGroup.add(himawari);
+
+    // 小葵互动
+    addInteractable({
+        type: 'tickle_himawari',
+        label: '👶 逗小葵',
+        x: himawari.position.x,
+        z: himawari.position.z,
+        radius: 2.0,
+        cooldown: 4500,
+        onUse: () => {
+            AudioManager.playTone(600, 0.1, 'sine');
+            showCollectPopup('👶 咯咯咯!');
+            himawari.rotation.z = Math.PI / 2 + 0.2;
+            setTimeout(() => himawari.rotation.z = Math.PI / 2, 200);
+
+            // 简单AI: 转向
+            himawari.rotation.y += Math.PI;
+        }
+    });
 
     createCookies();
     createPowerups();
@@ -106,7 +137,8 @@ function generateMapLayout() {
         sandbox: { x: 0, z: 0 },
         spawn: { x: 0, z: 8 },
         enemySpawn: { x: -12, z: -15 },
-        shiroSpawn: { x: 5, z: 5 }
+        shiroSpawn: { x: 5, z: 5 },
+        himawariSpawn: { x: -15, z: -15 } // near house
     };
 
     // 简单的随机尝试算法
@@ -115,7 +147,13 @@ function generateMapLayout() {
         { key: 'kindergarten', r: 9 },
         { key: 'slide', r: 5 },
         { key: 'swing', r: 5 },
-        { key: 'sandbox', r: 5 }
+        { key: 'sandbox', r: 5 },
+        { key: 'junglegym', r: 6 },
+        { key: 'chocobi', r: 3 },
+        { key: 'buriburi', r: 3 },
+        { key: 'actionkamen', r: 3 },
+        { key: 'quantumrobo', r: 4 },
+        { key: 'nenebunny', r: 2 }
     ];
 
     const placedItems = [];
@@ -209,6 +247,16 @@ function generateMapLayout() {
         }
     }
 
+    // 5. 放置小葵 (Himawari) - 在野原家附近
+    if (layout.house) {
+        layout.himawariSpawn = {
+            x: layout.house.x + 3 + (Math.random() - 0.5) * 4,
+            z: layout.house.z + 3 + (Math.random() - 0.5) * 4
+        };
+    } else {
+        layout.himawariSpawn = { x: -15, z: -15 };
+    }
+
     GameState.mapLayout = layout;
     return layout;
 }
@@ -300,29 +348,166 @@ function createWorld() {
     kindergarten.rotation.y = Math.random() * Math.PI * 2;
     GameState.worldGroup.add(kindergarten);
     addCircleCollider({ x: kindergarten.position.x, z: kindergarten.position.z, radius: 6.8, height: 3.5, blocksLOS: true, blocksMovement: true, tag: 'kindergarten' });
+
+    // 小白的狗屋 (在野原家旁边)
+    const shiroHouse = createShiroHouse();
+    // 放在房子侧面
+    const houseDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), noharaHouse.rotation.y);
+    shiroHouse.position.copy(noharaHouse.position).add(houseDir.multiplyScalar(6.5));
+    // 稍微随机旋转
+    shiroHouse.rotation.y = noharaHouse.rotation.y + (Math.random() - 0.5) * 0.5;
+    GameState.worldGroup.add(shiroHouse);
+    addBoxCollider({
+        minX: shiroHouse.position.x - 1, maxX: shiroHouse.position.x + 1,
+        minZ: shiroHouse.position.z - 1, maxZ: shiroHouse.position.z + 1,
+        height: 1.5, blocksLOS: false, blocksMovement: true, tag: 'shiro_house'
+    });
     addInteractable({
-        type: 'hide_kindergarten',
-        label: '🏫 躲进幼稚园',
-        x: kindergarten.position.x,
-        z: kindergarten.position.z,
-        radius: 8.4,
-        cooldown: 11000,
+        type: 'pet_shiro',
+        label: '🏡 呼唤小白',
+        x: shiroHouse.position.x,
+        z: shiroHouse.position.z,
+        radius: 2.5,
+        cooldown: 5000,
         onUse: () => {
-            const now = Date.now();
-            const duration = 2100;
-            GameState.hiddenUntil = now + duration;
-            GameState.controlLockedUntil = now + duration;
-            GameState.noCatchUntil = Math.max(GameState.noCatchUntil, now + duration + 150);
-            GameState.playerVelY = 0;
-            GameState.playerBaseY = 0;
-            GameState.playerOnGround = true;
-            GameState.dashUntil = 0;
-            GameState.forcedMoveUntil = 0;
-            GameState.enemyLastKnownPlayerPos.copy(GameState.player.position);
-            showCollectPopup('🏫 快藏好!');
-            AudioManager.playTone(360, 0.08);
+            if (GameState.shiro) {
+                // 召唤小白回家
+                GameState.shiro.position.copy(shiroHouse.position).add(new THREE.Vector3(0, 0, 2));
+                particleSystem.emit(shiroHouse.position, 0xFFFFFF, 10);
+                AudioManager.playTone(500, 0.1);
+                showCollectPopup('🐶 小白回家!');
+            }
         }
     });
+
+    // 其他随机元素
+    if (layout.junglegym) {
+        const gym = createJungleGym();
+        gym.position.set(layout.junglegym.x, 0, layout.junglegym.z);
+        gym.rotation.y = Math.random() * Math.PI * 2;
+        GameState.worldGroup.add(gym);
+        addCircleCollider({ x: gym.position.x, z: gym.position.z, radius: 3.5, height: 3.0, blocksLOS: false, blocksMovement: true, tag: 'junglegym' });
+    }
+
+    if (layout.chocobi) {
+        const chocobi = createChocobi();
+        chocobi.position.set(layout.chocobi.x, 0, layout.chocobi.z);
+        GameState.worldGroup.add(chocobi);
+        addCircleCollider({ x: chocobi.position.x, z: chocobi.position.z, radius: 1.5, height: 4.0, blocksLOS: true, blocksMovement: true, tag: 'chocobi' });
+        addInteractable({
+            type: 'chocobi_snack',
+            label: '🦖 吃小饼干',
+            x: chocobi.position.x,
+            z: chocobi.position.z,
+            radius: 3.0,
+            cooldown: 15000,
+            onUse: () => {
+                GameState.score += 50;
+                updateScoreDisplay();
+                showCollectPopup('🦖 美味! +50');
+                AudioManager.playCollect();
+            }
+        });
+    }
+
+    if (layout.buriburi) {
+        const buri = createBuriburiStatue();
+        buri.position.set(layout.buriburi.x, 0, layout.buriburi.z);
+        buri.rotation.y = Math.random() * Math.PI * 2;
+        GameState.worldGroup.add(buri);
+        addCircleCollider({ x: buri.position.x, z: buri.position.z, radius: 1.2, height: 2.5, blocksLOS: true, blocksMovement: true, tag: 'buriburi' });
+        addInteractable({
+            type: 'buriburi_trade',
+            label: '🐷 拯救费',
+            x: buri.position.x,
+            z: buri.position.z,
+            radius: 2.5,
+            cooldown: 1000,
+            onUse: () => {
+                if (GameState.score >= 100) {
+                    GameState.score -= 100;
+                    updateScoreDisplay();
+                    // 随机给道具
+                    const types = ['invincible', 'speed', 'health'];
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    const powerup = createPowerup({
+                        type,
+                        color: type === 'invincible' ? 0xFFD700 : type === 'speed' ? 0x00CED1 : 0xFF69B4,
+                        icon: '🎁'
+                    });
+                    powerup.position.copy(GameState.player.position).add(new THREE.Vector3(0, 2, 0));
+                    GameState.scene.add(powerup);
+                    GameState.powerups.push(powerup);
+                    showCollectPopup('🐷 拿去吧! -100分');
+                    AudioManager.playTone(200, 0.2, 'square');
+                } else {
+                    showCollectPopup('🐷 分数不够!', 'red');
+                }
+            }
+        });
+    }
+
+    if (layout.actionkamen) {
+        const kamen = createActionMaskStatue();
+        kamen.position.set(layout.actionkamen.x, 0, layout.actionkamen.z);
+        kamen.rotation.y = Math.random() * Math.PI * 2;
+        GameState.worldGroup.add(kamen);
+        addCircleCollider({ x: kamen.position.x, z: kamen.position.z, radius: 1.2, height: 3.0, blocksLOS: true, blocksMovement: true, tag: 'actionkamen' });
+        addInteractable({
+            type: 'action_beam',
+            label: '⚡ 动感光波',
+            x: kamen.position.x,
+            z: kamen.position.z,
+            radius: 3.0,
+            cooldown: 30000,
+            onUse: () => {
+                // 震慑敌人
+                if (GameState.enemy) {
+                    GameState.enemyStunnedUntil = Date.now() + 5000;
+                    particleSystem.emit(GameState.enemy.position, 0x00FFFF, 30);
+                    showCollectPopup('⚡ 动感光波!!!');
+                    AudioManager.playTone(880, 0.5, 'sawtooth');
+                }
+            }
+        });
+    }
+
+    if (layout.quantumrobo) {
+        const robo = createQuantumRobot();
+        robo.position.set(layout.quantumrobo.x, 0, layout.quantumrobo.z);
+        robo.rotation.y = Math.random() * Math.PI * 2;
+        GameState.worldGroup.add(robo);
+        addBoxCollider({
+            minX: robo.position.x - 2, maxX: robo.position.x + 2,
+            minZ: robo.position.z - 2, maxZ: robo.position.z + 2,
+            height: 6.0, blocksLOS: true, blocksMovement: true, tag: 'quantumrobo'
+        });
+    }
+
+    if (layout.nenebunny) {
+        const bunny = createNeneBunny();
+        bunny.position.set(layout.nenebunny.x, 0, layout.nenebunny.z);
+        bunny.rotation.y = Math.random() * Math.PI * 2;
+        GameState.worldGroup.add(bunny);
+        addCircleCollider({ x: bunny.position.x, z: bunny.position.z, radius: 1.0, height: 1.5, blocksLOS: false, blocksMovement: true, tag: 'nenebunny' });
+        addInteractable({
+            type: 'punch_bunny',
+            label: '🐰 揍兔子',
+            x: bunny.position.x,
+            z: bunny.position.z,
+            radius: 2.2,
+            cooldown: 500,
+            onUse: () => {
+                // 震动动画
+                bunny.scale.set(1.2, 0.8, 1.2);
+                setTimeout(() => bunny.scale.set(1, 1, 1), 100);
+
+                AudioManager.playTone(100, 0.1, 'square');
+                showCollectPopup('💢好爽!');
+                particleSystem.emit(bunny.position, 0xFFFFFF, 5);
+            }
+        });
+    }
 
     // 公园设施
     createParkFeatures(layout);
@@ -799,14 +984,288 @@ function createBushObstacles() {
                 blocksMovement: true,
                 tag: 'bush'
             });
-
             placed = true;
             break;
         }
-
-        if (!placed) break;
     }
 }
+
+// ============ 新增：小白狗屋 ============
+function createShiroHouse() {
+    const group = new THREE.Group();
+
+    // 屋体
+    const houseGeo = new THREE.BoxGeometry(2, 1.8, 2.2);
+    const houseMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
+    const house = new THREE.Mesh(houseGeo, houseMat);
+    house.position.y = 0.9;
+    house.castShadow = true;
+    group.add(house);
+
+    // 屋顶 (红色)
+    const roofGeo = new THREE.ConeGeometry(1.8, 1.2, 4);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xFF4444 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = 2.4;
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+    group.add(roof);
+
+    // 门洞
+    const doorGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 16);
+    const doorMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const door = new THREE.Mesh(doorGeo, doorMat);
+    door.rotation.x = Math.PI / 2;
+    door.position.set(0, 0.7, 1.11);
+    group.add(door);
+
+    // 牌子
+    const signGeo = new THREE.BoxGeometry(0.8, 0.3, 0.05);
+    const signMat = new THREE.MeshStandardMaterial({ color: 0xD2B48C });
+    const sign = new THREE.Mesh(signGeo, signMat);
+    sign.position.set(0, 1.4, 1.15);
+    group.add(sign);
+
+    return group;
+}
+
+// ============ 新增：攀爬架 (Jungle Gym) ============
+function createJungleGym() {
+    const group = new THREE.Group();
+
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4169E1 }); // 蓝色钢管
+
+    // 格子结构 3x3x3
+    const spacing = 1.2;
+    const size = 3;
+    const thickness = 0.08;
+
+    for (let x = 0; x <= size; x++) {
+        for (let y = 0; y <= size; y++) {
+            for (let z = 0; z <= size; z++) {
+                // 节点球
+                const joint = new THREE.Mesh(new THREE.SphereGeometry(thickness * 1.5), mat);
+                joint.position.set((x - size / 2) * spacing, y * spacing, (z - size / 2) * spacing);
+                group.add(joint);
+
+                // 横梁 X
+                if (x < size) {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, spacing), mat);
+                    bar.rotation.z = Math.PI / 2;
+                    bar.position.set((x - size / 2 + 0.5) * spacing, y * spacing, (z - size / 2) * spacing);
+                    group.add(bar);
+                }
+                // 竖梁 Y
+                if (y < size) {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, spacing), mat);
+                    bar.position.set((x - size / 2) * spacing, (y + 0.5) * spacing, (z - size / 2) * spacing);
+                    group.add(bar);
+                }
+                // 纵梁 Z
+                if (z < size) {
+                    const bar = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, spacing), mat);
+                    bar.rotation.x = Math.PI / 2;
+                    bar.position.set((x - size / 2) * spacing, y * spacing, (z - size / 2 + 0.5) * spacing);
+                    group.add(bar);
+                }
+            }
+        }
+    }
+
+    return group;
+}
+
+// ============ 新增：巧克比 (Chocobi) ============
+function createChocobi() {
+    const group = new THREE.Group();
+
+    // 六边形盒子
+    const boxGeo = new THREE.CylinderGeometry(1.5, 1.5, 4, 6);
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0xFF69B4 }); // 粉色
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.y = 2;
+    box.castShadow = true;
+    group.add(box);
+
+    // 简单的星星装饰
+    const starGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 5);
+    const starMat = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+
+    for (let i = 0; i < 8; i++) {
+        const star = new THREE.Mesh(starGeo, starMat);
+        const angle = Math.random() * Math.PI * 2;
+        const h = Math.random() * 3.5 + 0.2;
+        star.position.set(Math.cos(angle) * 1.55, h, Math.sin(angle) * 1.55);
+        star.lookAt(0, h, 0);
+        star.rotation.x = Math.PI / 2;
+        group.add(star);
+    }
+
+    return group;
+}
+
+// ============ 新增：不理不理左卫门 (Buriburi Zaemon) ============
+function createBuriburiStatue() {
+    const group = new THREE.Group();
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xAAAAAA });
+
+    // 身体
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.2, 12), stoneMat);
+    body.position.y = 1.2;
+    group.add(body);
+
+    // 头
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 16), stoneMat);
+    head.position.y = 2.0;
+    group.add(head);
+
+    // 猪鼻子
+    const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.3, 8), stoneMat);
+    snout.rotation.x = Math.PI / 2;
+    snout.position.set(0, 2.0, 0.5);
+    group.add(snout);
+
+    // 剑
+    const sword = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.05), stoneMat);
+    sword.position.set(0.6, 1.5, 0.3);
+    sword.rotation.z = -0.2;
+    sword.rotation.x = 0.5;
+    group.add(sword);
+
+    // 底座
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.4, 0.6, 16), stoneMat);
+    base.position.y = 0.3;
+    group.add(base);
+
+    return group;
+}
+
+// ============ 新增：动感超人 (Action Kamen) ============
+function createActionMaskStatue() {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4444AA }); // 蓝色制服
+
+    // 身体
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.3, 1.4, 12), mat);
+    body.position.y = 1.4;
+    group.add(body);
+
+    // 头
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color: 0xEEEEEE })); // 银色头盔
+    head.position.y = 2.3;
+    group.add(head);
+
+    // 姿势：手臂高举 (动感光波!)
+    const armGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8);
+    const lArm = new THREE.Mesh(armGeo, mat);
+    lArm.position.set(-0.5, 1.8, 0);
+    lArm.rotation.z = 2.5;
+    group.add(lArm);
+
+    const rArm = new THREE.Mesh(armGeo, mat);
+    rArm.position.set(0.5, 1.8, 0);
+    rArm.rotation.z = -2.5;
+    group.add(rArm);
+
+    // 披风
+    const cape = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.8, 0.05), new THREE.MeshStandardMaterial({ color: 0xFF0000 }));
+    cape.position.set(0, 1.6, -0.3);
+    cape.rotation.x = 0.2;
+    group.add(cape);
+
+    // 底座
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 1.5), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    base.position.y = 0.2;
+    group.add(base);
+
+    return group;
+}
+
+// ============ 新增：康达姆机器人 (Quantum Robot) ============
+function createQuantumRobot() {
+    const group = new THREE.Group();
+
+    // 简单的方块堆叠
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
+
+    // 腿
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.5, 0.8), greenMat);
+    legL.position.set(-0.8, 1.25, 0);
+    group.add(legL);
+
+    const legR = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.5, 0.8), greenMat);
+    legR.position.set(0.8, 1.25, 0);
+    group.add(legR);
+
+    // 躯干
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 1.2), greenMat);
+    body.position.set(0, 3.5, 0);
+    group.add(body);
+
+    // 胸口
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.2), goldMat);
+    chest.position.set(0, 3.6, 0.6);
+    group.add(chest);
+
+    // 头
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), greenMat);
+    head.position.set(0, 5.0, 0);
+    group.add(head);
+
+    // 뿔 (Antenna)
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5, 4), goldMat);
+    horn.position.set(0, 5.7, 0);
+    group.add(horn);
+
+    return group;
+}
+
+// ============ 新增：妮妮的兔子 (Nene's Bunny) ============
+function createNeneBunny() {
+    const group = new THREE.Group();
+
+    const mat = new THREE.MeshStandardMaterial({ color: 0xFFEBCD }); // 浅杏色
+
+    // 身体
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), mat);
+    body.scale.set(1, 1.4, 0.8);
+    body.position.y = 0.9;
+    group.add(body);
+
+    // 头
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), mat);
+    head.position.y = 1.8;
+    group.add(head);
+
+    // 长耳朵
+    const earGeo = new THREE.CylinderGeometry(0.15, 0.1, 0.8);
+
+    const earL = new THREE.Mesh(earGeo, mat);
+    earL.position.set(-0.3, 2.4, 0);
+    earL.rotation.z = 0.2;
+    group.add(earL);
+
+    const earR = new THREE.Mesh(earGeo, mat);
+    earR.position.set(0.3, 2.4, 0);
+    earR.rotation.z = -0.2;
+    group.add(earR);
+
+    // 死鱼眼
+    const eyeGeo = new THREE.SphereGeometry(0.06);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeL.position.set(-0.2, 1.9, 0.45);
+    group.add(eyeL);
+
+    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeR.position.set(0.2, 1.9, 0.45);
+    group.add(eyeR);
+
+    return group;
+}
+
 
 // ============ 创建围栏 ============
 function createFence() {

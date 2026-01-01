@@ -437,3 +437,74 @@ function createPowerup(config) {
     return powerup;
 }
 
+
+// ============ 创建小葵 (Himawari) ============
+function createHimawari() {
+    const baby = new THREE.Group();
+    baby.name = 'himawari';
+
+    // 身体 (黄色连体衣)
+    const bodyGeo = new THREE.CylinderGeometry(0.2, 0.25, 0.5, 12);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.25;
+    body.rotation.z = Math.PI / 2; // 爬行姿态
+    body.castShadow = true;
+    baby.add(body);
+
+    // 头
+    const headGeo = new THREE.SphereGeometry(0.3, 16, 16);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xFFDBAC });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.set(0.3, 0.4, 0);
+    head.castShadow = true;
+    baby.add(head);
+
+    // 头发 (橘色卷发)
+    const hairGeo = new THREE.SphereGeometry(0.32, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0xFFA500 });
+    const hair = new THREE.Mesh(hairGeo, hairMat);
+    hair.position.set(0.3, 0.45, 0);
+    hair.rotation.z = -0.2;
+    baby.add(hair);
+
+    // 眼睛
+    const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeL.position.set(0.5, 0.45, 0.12);
+    baby.add(eyeL);
+
+    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeR.position.set(0.5, 0.45, -0.12);
+    baby.add(eyeR);
+
+    // 手脚
+    const limbGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.25);
+    const limbMat = new THREE.MeshStandardMaterial({ color: 0xFFDBAC });
+
+    // 手
+    const handL = new THREE.Mesh(limbGeo, limbMat);
+    handL.position.set(0.3, 0.1, 0.2);
+    handL.rotation.x = Math.PI / 4;
+    baby.add(handL);
+
+    const handR = new THREE.Mesh(limbGeo, limbMat);
+    handR.position.set(0.3, 0.1, -0.2);
+    handR.rotation.x = -Math.PI / 4;
+    baby.add(handR);
+
+    // 腿
+    const LegL = new THREE.Mesh(limbGeo, limbMat);
+    LegL.position.set(-0.2, 0.1, 0.15);
+    LegL.rotation.z = Math.PI / 4;
+    baby.add(LegL);
+
+    const LegR = new THREE.Mesh(limbGeo, limbMat);
+    LegR.position.set(-0.2, 0.1, -0.15);
+    LegR.rotation.z = Math.PI / 4;
+    baby.add(LegR);
+
+    return baby;
+}
