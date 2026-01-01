@@ -47,6 +47,32 @@ function updatePlayer() {
         GameState.lastOnGroundTime = now; // 持续更新落地时间
     }
 
+    // Variable Jump Height (Release to fall faster)
+    if (GameState.playerVelY > 0 && !GameState.playerOnGround) {
+        const isJumpHeld = GameState.keys[' '] || GameState.keys['Space'] || GameState.keys['ArrowUp'] || GameState.keys['w'];
+        if (!isJumpHeld) {
+            GameState.playerVelY -= 60 * delta; // Extra gravity
+        }
+    }
+
+    // Water Hazard Check
+    if (!locked && !GameState.isInvincible && GameState.zones) {
+        for (const zone of GameState.zones) {
+            if (zone.type === 'water') {
+                const distSq = (GameState.player.position.x - zone.x) ** 2 + (GameState.player.position.z - zone.z) ** 2;
+                if (distSq < (zone.radius - 0.5) ** 2) {
+                    // Fell in water
+                    if (GameState.playerBaseY <= 0.1) {
+                        AudioManager.playTone(150, 0.4, 'sawtooth'); // Splash sound
+                        showCollectPopup('💧 落水! -1命', 'blue');
+                        playerCaught(); // Reuse death logic for now or custom
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     // 基础速度参数
     let maxSpeed = CONFIG.PLAYER_SPEED;
     if (GameState.speedBoost) maxSpeed *= 1.5;

@@ -25,11 +25,11 @@ const CONFIG = {
         FIXED_FPS: 60,
         MAX_FRAME_SCALE: 2.5,
         GRAVITY: 80,
-        JUMP_VELOCITY: 20.0,
+        JUMP_VELOCITY: 22.0,
         MAX_JUMP_HEIGHT_FOR_DODGE: 0.8,
-        ACCELERATION: 0.6,
-        FRICTION: 0.45,
-        TURN_SPEED: 0.7
+        ACCELERATION: 1.2,
+        FRICTION: 0.8,
+        TURN_SPEED: 1.5
     },
     CAMERA: {
         SMOOTHNESS: 0.15,

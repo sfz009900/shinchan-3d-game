@@ -38,6 +38,15 @@ function addBoxCollider({ minX, maxX, minZ, maxZ, height = Infinity, blocksLOS =
     });
 }
 
+function addZone({ x, z, radius, playerFactor = 1, enemyFactor = 1, type = 'normal' }) {
+    GameState.zones.push({
+        x, z, radius,
+        playerFactor,
+        enemyFactor,
+        type
+    });
+}
+
 function clampToWorldXZ(pos) {
     const boundary = CONFIG.WORLD_SIZE - 1;
     pos.x = Math.max(-boundary, Math.min(boundary, pos.x));

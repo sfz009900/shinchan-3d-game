@@ -275,6 +275,57 @@ function generateMapLayout() {
         layout.himawariSpawn = { x: -15, z: -15 };
     }
 
+    // 6. 放置水池 (Ponds)
+    layout.ponds = [];
+    for (let i = 0; i < 3; i++) {
+        let valid = false;
+        let px, pz;
+        for (let k = 0; k < 20; k++) {
+            px = (Math.random() - 0.5) * size * 1.6;
+            pz = (Math.random() - 0.5) * size * 1.6;
+            let ok = true;
+            if (Math.hypot(px, pz) < 8) ok = false; // Not near spawn
+            if (ok) {
+                for (const other of placedItems) {
+                    if (Math.hypot(px - other.x, pz - other.z) < (other.r + 5)) {
+                        ok = false; break;
+                    }
+                }
+            }
+            if (ok) { valid = true; break; }
+        }
+        if (valid) {
+            layout.ponds.push({ x: px, z: pz });
+            placedItems.push({ x: px, z: pz, r: 4.5 });
+        }
+    }
+
+    // 7. 放置管道 (Tunnels)
+    layout.tunnels = [];
+    for (let i = 0; i < 3; i++) {
+        let valid = false;
+        let tx, tz;
+        const isRotated = Math.random() > 0.5;
+        for (let k = 0; k < 20; k++) {
+            tx = (Math.random() - 0.5) * size * 1.6;
+            tz = (Math.random() - 0.5) * size * 1.6;
+            let ok = true;
+            if (Math.hypot(tx, tz) < 8) ok = false;
+            if (ok) {
+                for (const other of placedItems) {
+                    if (Math.hypot(tx - other.x, tz - other.z) < (other.r + 6)) { // Tunnels are long
+                        ok = false; break;
+                    }
+                }
+            }
+            if (ok) { valid = true; break; }
+        }
+        if (valid) {
+            layout.tunnels.push({ x: tx, z: tz, rotated: isRotated });
+            placedItems.push({ x: tx, z: tz, r: 5.0 });
+        }
+    }
+
     GameState.mapLayout = layout;
     return layout;
 }
@@ -586,6 +637,58 @@ function createWorld() {
                 AudioManager.playTone(100, 0.1, 'square');
                 showCollectPopup('💢好爽!');
                 particleSystem.emit(bunny.position, 0xFFFFFF, 5);
+            }
+        });
+    }
+
+    // Ponds
+    if (layout.ponds) {
+        layout.ponds.forEach(p => {
+            const pond = createPond();
+            pond.position.set(p.x, 0, p.z);
+            GameState.worldGroup.add(pond);
+            // Add Water Zone (Slower move)
+            if (window.addZone) {
+                addZone({ x: p.x, z: p.z, radius: 3.5, playerFactor: 0.4, enemyFactor: 0.4, type: 'water' });
+            }
+        });
+    }
+
+    // Tunnels (Pipes)
+    if (layout.tunnels) {
+        layout.tunnels.forEach(t => {
+            const tunnel = createTunnel();
+            tunnel.position.set(t.x, 0, t.z);
+            if (t.rotated) tunnel.rotation.y = Math.PI / 2;
+            GameState.worldGroup.add(tunnel);
+
+            const len = 10;
+            const r = 2.4;
+
+            if (t.rotated) {
+                // Pipe along Z axis
+                addBoxCollider({
+                    minX: t.x + r - 0.2, maxX: t.x + r + 0.8,
+                    minZ: t.z - len / 2, maxZ: t.z + len / 2,
+                    height: 5, blocksLOS: true, blocksMovement: true, tag: 'tunnel_wall'
+                });
+                addBoxCollider({
+                    minX: t.x - r - 0.8, maxX: t.x - r + 0.2,
+                    minZ: t.z - len / 2, maxZ: t.z + len / 2,
+                    height: 5, blocksLOS: true, blocksMovement: true, tag: 'tunnel_wall'
+                });
+            } else {
+                // Pipe along X axis
+                addBoxCollider({
+                    minX: t.x - len / 2, maxX: t.x + len / 2,
+                    minZ: t.z + r - 0.2, maxZ: t.z + r + 0.8,
+                    height: 5, blocksLOS: true, blocksMovement: true, tag: 'tunnel_wall'
+                });
+                addBoxCollider({
+                    minX: t.x - len / 2, maxX: t.x + len / 2,
+                    minZ: t.z - r - 0.8, maxZ: t.z - r + 0.2,
+                    height: 5, blocksLOS: true, blocksMovement: true, tag: 'tunnel_wall'
+                });
             }
         });
     }
@@ -1540,4 +1643,54 @@ function createSkyCoins(x, z) {
         GameState.scene.add(coin);
         GameState.cookies.push(coin);
     }
+}
+
+// ============ 创建水池 ============
+function createPond() {
+    const pond = new THREE.Group();
+
+    // Water Surface
+    const geometry = new THREE.CylinderGeometry(4.0, 4.0, 0.2, 32);
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x1E90FF,
+        transparent: true,
+        opacity: 0.7,
+        roughness: 0.1,
+        metalness: 0.5
+    });
+    const water = new THREE.Mesh(geometry, material);
+    water.position.y = 0.05;
+    pond.add(water);
+
+    // Rim (Stones)
+    const rimGeo = new THREE.TorusGeometry(4.1, 0.2, 12, 32);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.1;
+    pond.add(rim);
+
+    return pond;
+}
+
+// ============ 创建管道 (Tunnel) ============
+function createTunnel() {
+    const tunnel = new THREE.Group();
+    const len = 10.0;
+    const radius = 2.5;
+
+    // Visual: Cylinder open ended
+    const geometry = new THREE.CylinderGeometry(radius, radius, len, 32, 1, true);
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xA9A9A9,
+        side: THREE.DoubleSide
+    });
+    const pipe = new THREE.Mesh(geometry, material);
+    pipe.rotation.z = Math.PI / 2; // Horizontal
+    pipe.position.y = radius * 0.85; // Half buried
+    pipe.castShadow = true;
+    pipe.receiveShadow = true;
+    tunnel.add(pipe);
+
+    return tunnel;
 }
