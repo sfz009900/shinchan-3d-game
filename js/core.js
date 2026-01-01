@@ -26,7 +26,16 @@ const CONFIG = {
         MAX_FRAME_SCALE: 2.5,
         GRAVITY: 26,                 // 增加重力：跳跃更快落地
         JUMP_VELOCITY: 9.0,          // 提高跳跃速度
-        MAX_JUMP_HEIGHT_FOR_DODGE: 0.7
+        MAX_JUMP_HEIGHT_FOR_DODGE: 0.7,
+        ACCELERATION: 0.025,         // 加速度 (每帧增加的速度)
+        FRICTION: 0.05,              // 摩擦力 (每帧减少的速度)
+        TURN_SPEED: 0.2              // 转向速度 (每帧旋转弧度)
+    },
+    CAMERA: {
+        SMOOTHNESS: 0.05,            // 位置跟随速度 (Lerp)
+        LOOK_SMOOTHNESS: 0.08,       // 视角跟随速度 (Lerp)
+        OFFSET_X_RATIO: 0.7,         // X轴跟随打折比例
+        OFFSET_Z: 18                 // Z轴距离
     },
     DASH: {
         DURATION: 220,               // 缩短冲刺时间
@@ -106,6 +115,7 @@ const GameState = {
     isInvincible: false,
     speedBoost: false,
     noCatchUntil: 0,
+    playerVelocity: new THREE.Vector3(0, 0, 0), // 新增：玩家速度向量
     playerVelY: 0,
     playerOnGround: true,
     playerBaseY: 0,
@@ -142,6 +152,7 @@ const GameState = {
     shiroTripCooldownUntil: 0,
     dangerBeepAt: 0,
     cameraShakeOffset: new THREE.Vector3(),
+    cameraLookAtTarget: new THREE.Vector3(0, 0, 0), // 新增：平滑视角目标
     delta: 0,
     frameScale: 1,
     joystickInput: { x: 0, y: 0 },

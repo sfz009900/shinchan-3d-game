@@ -9,11 +9,11 @@ function updatePlayer() {
     const locked = now < GameState.controlLockedUntil || now < GameState.hiddenUntil;
 
     const input = getMoveInputNormalized();
-    let dirX = locked ? 0 : input.dx;
-    let dirZ = locked ? 0 : input.dz;
-    let moving = !locked && input.moving;
+    let inputDirX = locked ? 0 : input.dx;
+    let inputDirZ = locked ? 0 : input.dz;
+    const wantToMove = !locked && input.moving;
 
-    // 跳跃缓冲（空格）
+    // 修复：恢复跳跃逻辑
     if (!locked && now < GameState.jumpBufferedUntil && GameState.playerOnGround) {
         GameState.playerOnGround = false;
         GameState.playerVelY = CONFIG.PHYSICS.JUMP_VELOCITY;
@@ -35,40 +35,120 @@ function updatePlayer() {
         GameState.playerVelY = 0;
     }
 
-    // 场景强制移动（滑梯/秋千等） > 冲刺（Shift）
+    // 基础速度参数
+    let maxSpeed = CONFIG.PLAYER_SPEED;
+    if (GameState.speedBoost) maxSpeed *= 1.5;
+    maxSpeed *= getZoneSpeedFactor(GameState.player.position.x, GameState.player.position.z, 'player');
+
+    // 状态判定
     const forced = !locked && now < GameState.forcedMoveUntil;
     const dashing = !forced && !locked && now < GameState.dashUntil;
+
+    // 1. 计算目标速度 (Target Velocity)
+    let targetVelX = 0;
+    let targetVelZ = 0;
+
     if (forced) {
-        dirX = GameState.forcedMoveDir.x;
-        dirZ = GameState.forcedMoveDir.z;
-        moving = true;
+        inputDirX = GameState.forcedMoveDir.x;
+        inputDirZ = GameState.forcedMoveDir.z;
+        maxSpeed *= GameState.forcedMoveMultiplier;
+        targetVelX = inputDirX * maxSpeed;
+        targetVelZ = inputDirZ * maxSpeed;
+        // 强制移动：瞬间获得速度
+        GameState.playerVelocity.x = targetVelX;
+        GameState.playerVelocity.z = targetVelZ;
     } else if (dashing) {
-        dirX = GameState.dashDir.x;
-        dirZ = GameState.dashDir.z;
-        moving = true;
+        inputDirX = GameState.dashDir.x;
+        inputDirZ = GameState.dashDir.z;
+        maxSpeed *= CONFIG.DASH.SPEED_MULTIPLIER;
+        targetVelX = inputDirX * maxSpeed;
+        targetVelZ = inputDirZ * maxSpeed;
+        // 冲刺：瞬间获得速度
+        GameState.playerVelocity.x = targetVelX;
+        GameState.playerVelocity.z = targetVelZ;
+    } else {
+        // 正常移动：应用加速度/摩擦力
+        if (wantToMove) {
+            targetVelX = inputDirX * maxSpeed;
+            targetVelZ = inputDirZ * maxSpeed;
+
+            // 简单的“朝目标移动”算法 (Linear Acceleration)
+            const accel = CONFIG.PHYSICS.ACCELERATION * scale;
+
+            const diffX = targetVelX - GameState.playerVelocity.x;
+            const diffZ = targetVelZ - GameState.playerVelocity.z;
+            const dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
+
+            if (dist <= accel) {
+                GameState.playerVelocity.x = targetVelX;
+                GameState.playerVelocity.z = targetVelZ;
+            } else {
+                GameState.playerVelocity.x += (diffX / dist) * accel;
+                GameState.playerVelocity.z += (diffZ / dist) * accel;
+            }
+        } else {
+            // 摩擦力 (Deceleration)
+            const friction = CONFIG.PHYSICS.FRICTION * scale;
+            const currentSpeed = Math.sqrt(GameState.playerVelocity.x * GameState.playerVelocity.x + GameState.playerVelocity.z * GameState.playerVelocity.z);
+
+            if (currentSpeed <= friction) {
+                GameState.playerVelocity.x = 0;
+                GameState.playerVelocity.z = 0;
+            } else {
+                GameState.playerVelocity.x -= (GameState.playerVelocity.x / currentSpeed) * friction;
+                GameState.playerVelocity.z -= (GameState.playerVelocity.z / currentSpeed) * friction;
+            }
+        }
     }
 
-    // 速度（带地形/道具/冲刺加成）
-    let speed = CONFIG.PLAYER_SPEED;
-    if (GameState.speedBoost) speed *= 1.5;
-    speed *= getZoneSpeedFactor(GameState.player.position.x, GameState.player.position.z, 'player');
-    if (forced) speed *= GameState.forcedMoveMultiplier;
-    else if (dashing) speed *= CONFIG.DASH.SPEED_MULTIPLIER;
-
-    if (dirX !== 0 || dirZ !== 0) {
+    // 2. 应用位移 (Apply Velocity)
+    if (Math.abs(GameState.playerVelocity.x) > 0.0001 || Math.abs(GameState.playerVelocity.z) > 0.0001) {
         moveWithCollisions(
             GameState.player,
-            dirX * speed * scale,
-            dirZ * speed * scale,
+            GameState.playerVelocity.x * scale,
+            GameState.playerVelocity.z * scale,
             CONFIG.PLAYER_RADIUS,
             Math.max(0, GameState.playerBaseY)
         );
     }
 
-    // 面向移动/冲刺方向
-    if (moving) {
-        GameState.player.rotation.y = Math.atan2(dirX, dirZ);
+    // 3. 平滑转向 (Smooth Rotation)
+    // 强制/冲刺时瞬间转向，跑步时平滑转向
+    let targetRotation = null;
+    if ((forced || dashing) && (inputDirX !== 0 || inputDirZ !== 0)) {
+        targetRotation = Math.atan2(inputDirX, inputDirZ);
+        GameState.player.rotation.y = targetRotation;
+    } else if (wantToMove) {
+        // 有输入时，转向输入方向
+        targetRotation = Math.atan2(inputDirX, inputDirZ);
+
+        let currentRotation = GameState.player.rotation.y;
+        let diff = targetRotation - currentRotation;
+        // 角度归一化 (-PI ~ PI)
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+
+        const turnStep = CONFIG.PHYSICS.TURN_SPEED * scale;
+        if (Math.abs(diff) < turnStep) {
+            GameState.player.rotation.y = targetRotation;
+        } else {
+            GameState.player.rotation.y += Math.sign(diff) * turnStep;
+        }
     }
+
+    // 为了兼容后续代码
+    // 如果没有输入但有速度（滑行中），使用速度方向作为移动方向
+    let dirX = inputDirX;
+    let dirZ = inputDirZ;
+    const speedSq = GameState.playerVelocity.lengthSq();
+    if (dirX === 0 && dirZ === 0 && speedSq > 0.0001) {
+        const vLen = Math.sqrt(speedSq);
+        dirX = GameState.playerVelocity.x / vLen;
+        dirZ = GameState.playerVelocity.z / vLen;
+    }
+
+    let moving = wantToMove || forced || dashing || speedSq > 0.0001;
+
 
     // 小白绊倒：跑动时踩到会眩晕（跳起来可越过）
     if (!locked && moving && GameState.shiro && now >= GameState.shiroTripCooldownUntil) {
@@ -155,17 +235,36 @@ function updatePlayer() {
         else GameState.player.visible = true;
     }
 
-    // 相机跟随
-    // 先移除上一帧抖动偏移，避免累积漂移
+    // 相机跟随 (Advanced)
+    // 1. 计算理想相机位置
+    const targetCamX = GameState.player.position.x * CONFIG.CAMERA.OFFSET_X_RATIO;
+    const targetCamZ = GameState.player.position.z + CONFIG.CAMERA.OFFSET_Z;
+
+    // 2. 移除上一帧抖动 (反向操作，确保基础位置平滑)
     if (GameState.cameraShakeOffset) {
         GameState.camera.position.sub(GameState.cameraShakeOffset);
         GameState.cameraShakeOffset.set(0, 0, 0);
     }
-    const targetCamX = GameState.player.position.x * 0.7;
-    const targetCamZ = GameState.player.position.z + 18;
-    GameState.camera.position.x += (targetCamX - GameState.camera.position.x) * 0.05;
-    GameState.camera.position.z += (targetCamZ - GameState.camera.position.z) * 0.05;
 
+    // 3. 平滑移动相机
+    const camSmooth = CONFIG.CAMERA.SMOOTHNESS * scale;
+    GameState.camera.position.x += (targetCamX - GameState.camera.position.x) * camSmooth;
+    GameState.camera.position.z += (targetCamZ - GameState.camera.position.z) * camSmooth;
+
+    // 4. 计算理想视角中心 (LookAt Target)
+    // 基础看玩家，但可以稍微预测一点移动方向?
+    let lookX = GameState.player.position.x;
+    let lookZ = GameState.player.position.z;
+
+    // 简单的 Lookahead
+    if (Math.abs(GameState.playerVelocity.x) > 0.1) lookX += GameState.playerVelocity.x * 0.5;
+
+    // 5. 平滑视角中心
+    const lookSmooth = CONFIG.CAMERA.LOOK_SMOOTHNESS * scale;
+    GameState.cameraLookAtTarget.x += (lookX - GameState.cameraLookAtTarget.x) * lookSmooth;
+    GameState.cameraLookAtTarget.z += (lookZ - GameState.cameraLookAtTarget.z) * lookSmooth;
+
+    // 6. 应用相机抖动 (Screen Shake)
     // 妈妈贴脸时镜头轻微抖动，增加压迫感（躲藏时关闭）
     if (GameState.enemy && now >= GameState.hiddenUntil) {
         const dist = Math.hypot(
@@ -182,9 +281,11 @@ function updatePlayer() {
                 Math.cos(t * 18.7) * 0.14 * intensity
             );
             GameState.camera.position.add(GameState.cameraShakeOffset);
+            // 抖动时 LookAt 也要抖吗？通常不需要，只抖相机本身更像“手持不稳”
         }
     }
-    GameState.camera.lookAt(GameState.player.position.x, 0, GameState.player.position.z);
+
+    GameState.camera.lookAt(GameState.cameraLookAtTarget.x, 0, GameState.cameraLookAtTarget.z);
 
     updateActionPrompt();
 }
