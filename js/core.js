@@ -17,7 +17,7 @@ const CONFIG = {
     ENEMY_RADIUS: 0.85,
     SHIRO_RADIUS: 0.55,
     INITIAL_LIVES: 3,
-    WORLD_SIZE: 28,
+    WORLD_SIZE: 32,
     CATCH_DISTANCE: 1.6,             // 略微增加抓取距离，增加压迫感
     POWERUP_DURATION: 4000,          // 缩短道具时间，增加紧张感
     COMBO_TIMEOUT: 1500,             // 缩短连击窗口，更考验操作

@@ -58,7 +58,6 @@ function initThreeJS() {
     GameState.scene.add(GameState.enemy);
 
     GameState.shiro = createShiro();
-
     GameState.scene.add(GameState.shiro);
 
     // 小葵
@@ -90,6 +89,14 @@ function initThreeJS() {
             himawari.rotation.y += Math.PI;
         }
     });
+
+    // 实例化新角色 (如果地图里有)
+    if (GameState.mapLayout.kazama) spawnCharacter('kazama', createKazama, GameState.mapLayout.kazama, '🎓 风间: 只要有萌P...', 5000);
+    if (GameState.mapLayout.masao) spawnCharacter('masao', createMasao, GameState.mapLayout.masao, '🍙 正男: 哇啊啊啊!', 4000);
+    if (GameState.mapLayout.bochan) spawnCharacter('bochan', createBochan, GameState.mapLayout.bochan, '💧 阿呆: 呆...', 6000);
+    if (GameState.mapLayout.hiroshi) spawnCharacter('hiroshi', createHiroshi, GameState.mapLayout.hiroshi, '👞 广志: 闻闻我的袜子!', 10000);
+    if (GameState.mapLayout.principal) spawnCharacter('principal', createPrincipal, GameState.mapLayout.principal, '🕶️ 园长: 我不是黑道...', 8000);
+
 
     createCookies();
     createPowerups();
@@ -153,7 +160,16 @@ function generateMapLayout() {
         { key: 'buriburi', r: 3 },
         { key: 'actionkamen', r: 3 },
         { key: 'quantumrobo', r: 4 },
-        { key: 'nenebunny', r: 2 }
+        { key: 'chocobi', r: 3 },
+        { key: 'buriburi', r: 3 },
+        { key: 'actionkamen', r: 3 },
+        { key: 'quantumrobo', r: 4 },
+        { key: 'nenebunny', r: 2 },
+        { key: 'kazama', r: 2 },
+        { key: 'masao', r: 2 },
+        { key: 'bochan', r: 2 },
+        { key: 'hiroshi', r: 2 },
+        { key: 'principal', r: 2 }
     ];
 
     const placedItems = [];
@@ -162,7 +178,8 @@ function generateMapLayout() {
     // 1. 放置主要建筑/设施
     for (const item of items) {
         let placed = false;
-        for (let i = 0; i < 50; i++) {
+        // Increase attempts to find a spot
+        for (let i = 0; i < 200; i++) {
             const x = (Math.random() - 0.5) * 2 * size;
             const z = (Math.random() - 0.5) * 2 * size;
 
@@ -170,7 +187,8 @@ function generateMapLayout() {
             let valid = true;
             for (const other of placedItems) {
                 const dist = Math.hypot(x - other.x, z - other.z);
-                if (dist < (item.r + other.r + 2)) {
+                // Reduce buffer from 2 to 1 to fit more items
+                if (dist < (item.r + other.r + 1)) {
                     valid = false;
                     break;
                 }
@@ -259,6 +277,69 @@ function generateMapLayout() {
 
     GameState.mapLayout = layout;
     return layout;
+}
+
+// 辅助：生成角色并绑定通用互动逻辑
+function spawnCharacter(key, createFn, pos, label, cooldown) {
+    const char = createFn();
+    char.position.set(pos.x, 0, pos.z);
+    char.rotation.y = Math.random() * Math.PI * 2;
+    GameState.worldGroup.add(char);
+    addCircleCollider({ x: pos.x, z: pos.z, radius: 1.0, height: 1.5, blocksLOS: false, blocksMovement: true, tag: key });
+
+    addInteractable({
+        type: 'talk_' + key,
+        label: label,
+        x: pos.x,
+        z: pos.z,
+        radius: 2.2,
+        cooldown: cooldown,
+        onUse: () => {
+            // 这里可以针对每个角色写特殊的逻辑
+            handleCharacterInteraction(key, char);
+        }
+    });
+}
+
+function handleCharacterInteraction(key, char) {
+    if (key === 'kazama') {
+        showCollectPopup('💖 萌P好可爱!');
+        AudioManager.playTone(550, 0.1);
+        char.scale.set(1.1, 1.1, 1.1);
+        setTimeout(() => char.scale.set(1, 1, 1), 200);
+    } else if (key === 'masao') {
+        showCollectPopup('🍙 哎呀吓死我了!');
+        AudioManager.playTone(300, 0.2);
+        // 掉落回血
+        const heart = createPowerup({ type: 'health', color: 0xFF69B4, icon: '❤️' });
+        heart.position.copy(char.position).add(new THREE.Vector3(0, 1, 1));
+        GameState.scene.add(heart);
+        GameState.powerups.push(heart);
+    } else if (key === 'bochan') {
+        showCollectPopup('💧 鼻涕风暴!');
+        // 鼻涕旋转
+        const snot = char.getObjectByName('snot');
+        if (snot) {
+            let spin = 0;
+            const inter = setInterval(() => {
+                snot.rotation.y += 0.5;
+                spin++;
+                if (spin > 20) clearInterval(inter);
+            }, 50);
+        }
+    } else if (key === 'hiroshi') {
+        showCollectPopup('🤢 好臭啊!!!', 'purple');
+        // 眩晕周围敌人
+        if (GameState.enemy) {
+            GameState.enemyStunnedUntil = Date.now() + 4000;
+        }
+    } else if (key === 'principal') {
+        showCollectPopup('🕶️ 别怕,我是好人');
+        // 吓跑敌人 (临时移走)
+        if (GameState.enemy) {
+            GameState.enemy.position.add(new THREE.Vector3(20, 0, 20));
+        }
+    }
 }
 
 // ============ 创建游戏世界 ============

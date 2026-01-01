@@ -508,3 +508,291 @@ function createHimawari() {
 
     return baby;
 }
+
+// ============ 风间 (Kazama) ============
+function createKazama() {
+    const kid = new THREE.Group();
+    kid.name = 'kazama';
+
+    // 身体 (蓝色制服)
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.45, 0.9, 16),
+        new THREE.MeshStandardMaterial({ color: 0x000080 })
+    );
+    body.position.y = 0.7;
+    body.castShadow = true;
+    kid.add(body);
+
+    // 头
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 20, 20),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+    );
+    head.position.y = 1.65;
+    head.castShadow = true;
+    kid.add(head);
+
+    // 头发 (深蓝色，刘海)
+    const hair = new THREE.Mesh(
+        new THREE.SphereGeometry(0.48, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x000033 })
+    );
+    hair.position.y = 1.75;
+    kid.add(hair);
+
+    // 标志性刘海 (翘起来)
+    const bang = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.4, 4),
+        new THREE.MeshStandardMaterial({ color: 0x000033 })
+    );
+    bang.position.set(0, 2.1, 0.35);
+    bang.rotation.x = -0.5;
+    kid.add(bang);
+
+    // 脸部细节
+    addFaceFeatures(kid, 1.65);
+
+    // 腿
+    addLegs(kid, 0x000080);
+
+    return kid;
+}
+
+// ============ 正男 (Masao) ============
+function createMasao() {
+    const kid = new THREE.Group();
+    kid.name = 'masao';
+
+    // 身体 (绿色毛衣)
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.45, 0.9, 16),
+        new THREE.MeshStandardMaterial({ color: 0x98FB98 }) // PaleGreen
+    );
+    body.position.y = 0.7;
+    body.castShadow = true;
+    kid.add(body);
+
+    // 头 (饭团头 - 稍微扁一点的球)
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.45, 20, 20),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+    );
+    head.scale.set(1, 0.9, 1);
+    head.position.y = 1.6;
+    head.castShadow = true;
+    kid.add(head);
+
+    // 头发 (寸头/光头，淡灰色层)
+    const hair = new THREE.Mesh(
+        new THREE.SphereGeometry(0.46, 20, 10, 0, Math.PI * 2, 0, Math.PI / 3),
+        new THREE.MeshStandardMaterial({ color: 0x333333, transparent: true, opacity: 0.1 })
+    );
+    hair.position.y = 1.6;
+    kid.add(hair);
+
+    // 脸部 (哭丧脸)
+    addFaceFeatures(kid, 1.6, true);
+
+    // 腿
+    addLegs(kid, 0x000080);
+
+    return kid;
+}
+
+// ============ 阿呆 (Bo-chan) ============
+function createBochan() {
+    const kid = new THREE.Group();
+    kid.name = 'bochan';
+
+    // 身体 (黄色T恤)
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.36, 0.46, 0.9, 16),
+        new THREE.MeshStandardMaterial({ color: 0xFFD700 })
+    );
+    body.position.y = 0.7;
+    body.castShadow = true;
+    kid.add(body);
+
+    // 头 (长脸)
+    // 头 (长脸 - 使用 Cylinder 代替 Capsule 以兼容旧版 Three.js)
+    const head = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, 0.5, 16),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+    );
+    // 加两个半球模拟胶囊
+    const topCap = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), new THREE.MeshStandardMaterial({ color: 0xFFDBAC }));
+    topCap.position.y = 0.25;
+    head.add(topCap);
+    const bottomCap = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), new THREE.MeshStandardMaterial({ color: 0xFFDBAC }));
+    bottomCap.position.y = -0.25;
+    head.add(bottomCap);
+    head.position.y = 1.7;
+    head.castShadow = true;
+    kid.add(head);
+
+    // 鼻涕 !
+    const snot = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.04, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.8 })
+    );
+    snot.position.set(0, 1.6, 0.45);
+    snot.rotation.x = Math.PI / 2;
+    // 动画旋转点
+    snot.name = 'snot';
+    kid.add(snot);
+
+    // 腿
+    addLegs(kid, 0x1a1a1a); // 深色裤子
+
+    return kid;
+}
+
+// ============ 广志 (Hiroshi) ============
+function createHiroshi() {
+    const man = new THREE.Group();
+    man.name = 'hiroshi';
+
+    // 身体 (西装)
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4, 0.5, 1.3, 16),
+        new THREE.MeshStandardMaterial({ color: 0x708090 }) // SlateGray
+    );
+    body.position.y = 1.1;
+    body.castShadow = true;
+    man.add(body);
+
+    // 头 (方脸)
+    const head = new THREE.Mesh(
+        new THREE.BoxGeometry(0.6, 0.7, 0.6),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+    );
+    head.position.y = 2.1;
+    head.castShadow = true;
+    man.add(head);
+
+    // 胡渣
+    const stubble = new THREE.Mesh(
+        new THREE.BoxGeometry(0.61, 0.3, 0.61),
+        new THREE.MeshStandardMaterial({ color: 0xCCAAAA }) // 略深肤色
+    );
+    stubble.position.y = 1.95;
+    man.add(stubble);
+
+    // 腿 (长腿)
+    const legGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.8);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x708090 });
+
+    const legL = new THREE.Mesh(legGeo, legMat);
+    legL.position.set(-0.2, 0.4, 0);
+    man.add(legL);
+
+    const legR = new THREE.Mesh(legGeo, legMat);
+    legR.position.set(0.2, 0.4, 0);
+    man.add(legR);
+
+    // 手持臭袜子 (使用 Cylinder 代替 Capsule)
+    const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.3), new THREE.MeshStandardMaterial({ color: 0xEEEEEE }));
+    sock.position.set(0.6, 1.4, 0.4);
+    sock.rotation.z = Math.PI / 2;
+    sock.rotation.y = Math.PI / 4;
+    man.add(sock);
+
+    return man;
+}
+
+// ============ 园长 (Principal) ============
+function createPrincipal() {
+    const man = new THREE.Group();
+    man.name = 'principal';
+
+    // 身体 (黄色格子西装 - 简化为黄色)
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.55, 1.3, 16),
+        new THREE.MeshStandardMaterial({ color: 0xFFD700 })
+    );
+    body.position.y = 1.1;
+    body.castShadow = true;
+    man.add(body);
+
+    // 纹理 (格子衫效果 - 简单用几个黑色方块模拟)
+    for (let i = 0; i < 4; i++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.9), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        stripe.position.y = 0.8 + i * 0.3;
+        stripe.scale.set(1.05, 1, 1.05);
+        man.add(stripe);
+    }
+
+    // 头 (黑帮老大脸)
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+    );
+    head.position.y = 2.1;
+    head.castShadow = true;
+    man.add(head);
+
+    // 墨镜
+    const glasses = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.15, 0.2),
+        new THREE.MeshStandardMaterial({ color: 0x111111 })
+    );
+    glasses.position.set(0, 2.15, 0.35);
+    man.add(glasses);
+
+    // 胡子
+    const mustache = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, 0.05, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0x222222 })
+    );
+    mustache.position.set(0, 2.0, 0.4);
+    man.add(mustache);
+
+    // 腿
+    const legGeo = new THREE.CylinderGeometry(0.13, 0.12, 0.8);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
+
+    const legL = new THREE.Mesh(legGeo, legMat);
+    legL.position.set(-0.22, 0.4, 0);
+    man.add(legL);
+
+    const legR = new THREE.Mesh(legGeo, legMat);
+    legR.position.set(0.22, 0.4, 0);
+    man.add(legR);
+
+    return man;
+}
+
+// 辅助：添加通用脸部
+function addFaceFeatures(group, y, isSad = false) {
+    const eyeGeo = new THREE.SphereGeometry(0.06, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+    const l = new THREE.Mesh(eyeGeo, mat);
+    l.position.set(-0.15, y, 0.38);
+    group.add(l);
+
+    const r = new THREE.Mesh(eyeGeo, mat);
+    r.position.set(0.15, y, 0.38);
+    group.add(r);
+
+    if (isSad) {
+        // 哭嘴
+        const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.02, 8, 8, Math.PI), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        mouth.position.set(0, y - 0.15, 0.38);
+        mouth.rotation.x = Math.PI; // 倒过来
+        group.add(mouth);
+    }
+}
+
+function addLegs(group, color) {
+    const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.25, 8);
+    const legMat = new THREE.MeshStandardMaterial({ color: color });
+
+    const l = new THREE.Mesh(legGeo, legMat);
+    l.position.set(-0.18, 0.05, 0);
+    group.add(l);
+
+    const r = new THREE.Mesh(legGeo, legMat);
+    r.position.set(0.18, 0.05, 0);
+    group.add(r);
+}
